@@ -581,12 +581,14 @@ async def api_render_video(req: RenderRequest):
                 if not thumb_text:
                     thumb_text = meta.get("title", "IMAGINE IF!")[:20]
                 
-                # Generate thumbnail using Replicate Flux Dev
+                # Generate thumbnail using Replicate Flux Dev, matching the project's layout format
+                aspect_ratio = meta.get("aspectRatio", "16:9")
                 await asyncio.to_thread(
                     generator.generate_thumbnail,
                     project_id,
                     thumb_prompt,
-                    thumb_text
+                    thumb_text,
+                    aspect_ratio
                 )
                 thumbnail_url = f"outputs/{project_id}/thumbnail.jpg"
                 
