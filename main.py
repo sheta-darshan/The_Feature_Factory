@@ -338,16 +338,26 @@ async def api_generate_assets(req: AssetRequest):
         except Exception as e:
             print(f"Error updating metadata during assets gen: {e}")
             
-    # Load visual style from metadata
+    # Load metadata and visual style
     visual_style = "Cinematic Photo"
+    resolved_voice = "en-US-GuyNeural"
     meta_path = f"{project_dir}/metadata.json"
     if os.path.exists(meta_path):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
             visual_style = meta.get("visualStyle", "Cinematic Photo")
+            resolved_voice = meta.get("voice", "en-US-GuyNeural")
         except Exception:
             pass
+            
+    # Resolve the voice parameter
+    voice_to_use = req.voice
+    if voice_to_use == "Auto" or not voice_to_use:
+        voice_to_use = resolved_voice
+    if voice_to_use == "Auto" or not voice_to_use:
+        voice_to_use = "en-US-GuyNeural"
+        
     rate_str, pitch_str = get_voice_settings_for_style(visual_style)
     
     # Use a Semaphore of 1 to ensure images are generated sequentially
@@ -361,7 +371,7 @@ async def api_generate_assets(req: AssetRequest):
         image_path_raw = f"{project_dir}/{image_filename}.webp"
         
         # 1. Generate Voiceover (async, completely parallel with style settings)
-        voiceover_task = generator.generate_voiceover(seg.text_to_speak, audio_path, voice=req.voice, rate=rate_str, pitch=pitch_str)
+        voiceover_task = generator.generate_voiceover(seg.text_to_speak, audio_path, voice=voice_to_use, rate=rate_str, pitch=pitch_str)
         
         # 2. Generate Visual Asset (queued sequentially using Semaphore)
         async def run_image_task():
@@ -424,8 +434,9 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
     image_filename = f"image_{req.segmentIndex}" # extension added later
     image_path_raw = f"{project_dir}/{image_filename}.webp"
     
-    # Load visual style from metadata for pitch/rate adjustments
+    # Load metadata and visual style for pitch/rate adjustments
     visual_style = "Cinematic Photo"
+    resolved_voice = "en-US-GuyNeural"
     meta_path = f"{project_dir}/metadata.json"
     if os.path.exists(meta_path):
         try:
@@ -433,10 +444,19 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
                 meta = json.load(f)
             meta["imageModel"] = req.imageModel
             visual_style = meta.get("visualStyle", "Cinematic Photo")
+            resolved_voice = meta.get("voice", "en-US-GuyNeural")
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
         except Exception:
             pass
+            
+    # Resolve the voice parameter
+    voice_to_use = req.voice
+    if voice_to_use == "Auto" or not voice_to_use:
+        voice_to_use = resolved_voice
+    if voice_to_use == "Auto" or not voice_to_use:
+        voice_to_use = "en-US-GuyNeural"
+        
     rate_str, pitch_str = get_voice_settings_for_style(visual_style)
     
     try:
@@ -444,7 +464,7 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
         
         # 1. Regenerate voiceover if requested
         if req.regenerateAudio:
-            tasks.append(generator.generate_voiceover(req.textToSpeak, audio_path, voice=req.voice, rate=rate_str, pitch=pitch_str))
+            tasks.append(generator.generate_voiceover(req.textToSpeak, audio_path, voice=voice_to_use, rate=rate_str, pitch=pitch_str))
         else:
             # Dummy awaitable to match unpack count
             async def dummy_voice():
