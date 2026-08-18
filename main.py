@@ -541,6 +541,27 @@ async def api_render_video(req: RenderRequest):
             "audio_path": local_audio
         })
         
+    # Resolve the aspect ratio and caption preset parameters
+    aspect_ratio_to_use = req.aspectRatio
+    caption_preset_to_use = req.captionPreset
+    
+    meta_path = f"{project_dir}/metadata.json"
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            if aspect_ratio_to_use == "Auto" or not aspect_ratio_to_use:
+                aspect_ratio_to_use = meta.get("aspectRatio", "16:9")
+            if caption_preset_to_use == "Auto" or not caption_preset_to_use:
+                caption_preset_to_use = meta.get("captionPreset", "default")
+        except Exception:
+            pass
+            
+    if aspect_ratio_to_use == "Auto" or not aspect_ratio_to_use:
+        aspect_ratio_to_use = "16:9"
+    if caption_preset_to_use == "Auto" or not caption_preset_to_use:
+        caption_preset_to_use = "default"
+        
     bg_music_path = None
     if req.musicTrack:
         if req.musicTrack in ["Auto-Select", "auto", "Auto"]:
@@ -560,7 +581,12 @@ async def api_render_video(req: RenderRequest):
                 "Retro Anime": "ambient_dream.mp3",
                 "Dark Sci-Fi / Fantasy": "ambient_space.mp3",
                 "Steampunk Oil Painting": "ambient_dream.mp3",
-                "Cinematic Photo": "ambient_dream.mp3"
+                "Cinematic Photo": "ambient_dream.mp3",
+                "Storybook Sketch Art": "ambient_dream.mp3",
+                "Cosmic Synthwave / Hologram": "synthwave_beat.mp3",
+                "Traditional Ink Wash (Sumi-e)": "ambient_dream.mp3",
+                "Claymation / Stop-Motion": "ambient_dream.mp3",
+                "Comic Book Noir": "synthwave_beat.mp3"
             }
             mapped_track = style_music_mapping.get(visual_style, "ambient_dream.mp3")
             bg_music_path = f"static/music/{mapped_track}"
@@ -574,13 +600,13 @@ async def api_render_video(req: RenderRequest):
             generator.assemble_video,
             processed_segments,
             output_video_path,
-            req.aspectRatio,
+            aspect_ratio_to_use,
             bg_music_path,
             req.fontName,
             req.highlightColor,
             req.captionPosition,
             req.addWatermark,
-            req.captionPreset
+            caption_preset_to_use
         )
         
         # Update project metadata and generate thumbnail
