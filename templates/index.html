@@ -552,22 +552,35 @@
             <div class="row">
                 <div class="form-group">
                     <label for="duration-input">Target Video Duration (seconds)</label>
-                    <input type="number" id="duration-input" value="30" min="15" max="180">
+                    <select id="duration-input">
+                        <option value="0" selected>✨ Auto (AI Recommended)</option>
+                        <option value="30">Short (30 seconds)</option>
+                        <option value="45">Medium Short (45 seconds)</option>
+                        <option value="60">Medium (60 seconds)</option>
+                        <option value="90">Long (90 seconds)</option>
+                        <option value="120">Extra Long (120 seconds)</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="style-select">Visual Preset Style</label>
                     <select id="style-select">
+                        <option value="Auto" selected>✨ Auto (AI Recommended)</option>
                         <option value="Cinematic Photo">Cinematic Photo (Detailed Widescreen)</option>
                         <option value="Dark Sci-Fi / Fantasy">Dark Sci-Fi / Fantasy (Moody, Foggy)</option>
                         <option value="Cyberpunk">Cyberpunk (Neon, Rainy City)</option>
                         <option value="Retro Anime">Retro Anime (Studio Ghibli 90s)</option>
                         <option value="Steampunk Oil Painting">Steampunk Oil Painting (Mechanical, Brass)</option>
                         <option value="Storybook Sketch Art">Storybook Sketch Art (Watercolor sketch, illustration)</option>
+                        <option value="Cosmic Synthwave / Hologram">Cosmic Synthwave (Neon Wireframes)</option>
+                        <option value="Traditional Ink Wash (Sumi-e)">Traditional Ink Wash (Zen Sumi-e)</option>
+                        <option value="Claymation / Stop-Motion">Claymation (Whimsical Stop-Motion)</option>
+                        <option value="Comic Book Noir">Comic Book Noir (Gritty Ink Noir)</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="aspect-select">Layout Format (Aspect Ratio)</label>
                     <select id="aspect-select">
+                        <option value="Auto" selected>✨ Auto (AI Recommended)</option>
                         <option value="16:9">Widescreen (16:9 - YouTube Widescreen)</option>
                         <option value="9:16">Shorts/Reels (9:16 - YouTube Vertical)</option>
                     </select>
@@ -586,10 +599,17 @@
                 <div class="form-group">
                     <label for="voice-select">Voice Narration Accent</label>
                     <select id="voice-select">
+                        <option value="Auto" selected>✨ Auto (AI Recommended)</option>
                         <option value="en-US-GuyNeural">🇺🇸 US Male (Guy)</option>
                         <option value="en-US-AnaNeural">🇺🇸 US Female (Ana)</option>
                         <option value="en-GB-SoniaNeural">🇬🇧 British Female (Sonia)</option>
                         <option value="en-AU-WilliamNeural">🇦🇺 Australian Male (William)</option>
+                        <option value="de-DE-FlorianMultilingualNeural">🇩🇪 German Male (Florian)</option>
+                        <option value="fr-FR-HenriNeural">🇫🇷 French Male (Henri)</option>
+                        <option value="es-ES-AlvaroNeural">🇪🇸 Spanish Male (Alvaro)</option>
+                        <option value="ja-JP-KeitaNeural">🇯🇵 Japanese Male (Keita)</option>
+                        <option value="pt-BR-AntonioNeural">🇧🇷 Portuguese Male (Antonio)</option>
+                        <option value="hi-IN-MadhurNeural">🇮🇳 Hindi Male (Madhur)</option>
                     </select>
                 </div>
             </div>
@@ -620,6 +640,7 @@
                 <div class="form-group">
                     <label for="preset-select">Caption Style Preset</label>
                     <select id="preset-select">
+                        <option value="Auto" selected>✨ Auto (AI Recommended)</option>
                         <option value="default">Default Custom Styling</option>
                         <option value="mrbeast">🔥 MrBeast Pop (Bold Uppercase Alternating)</option>
                         <option value="hormozi">👑 Alex Hormozi (Bold 3D Yellow/Green)</option>
@@ -1114,10 +1135,13 @@
             status.innerHTML = `<span class="spinner"></span> Brainstorming script segments and SEO tags with Gemini...`;
 
             try {
+                const aspectRatio = document.getElementById("aspect-select").value;
+                const captionPreset = document.getElementById("preset-select").value;
+                
                 const response = await fetch("/api/generate-script", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ thought, duration, visual_style, imageModel, voice })
+                    body: JSON.stringify({ thought, duration, visual_style, imageModel, voice, aspectRatio, captionPreset })
                 });
 
                 if (!response.ok) {
@@ -1128,6 +1152,23 @@
                 const data = await response.json();
                 currentProjectId = data.projectId;
                 currentSegments = data.segments;
+                
+                // Auto-configure the UI dropdown selections dynamically based on Gemini's recommendations
+                if (data.visualStyle) {
+                    document.getElementById("style-select").value = data.visualStyle;
+                }
+                if (data.voice) {
+                    document.getElementById("voice-select").value = data.voice;
+                }
+                if (data.duration) {
+                    document.getElementById("duration-input").value = data.duration;
+                }
+                if (data.aspectRatio) {
+                    document.getElementById("aspect-select").value = data.aspectRatio;
+                }
+                if (data.captionPreset) {
+                    document.getElementById("preset-select").value = data.captionPreset;
+                }
                 
                 // Store YouTube SEO details
                 seoTitle = data.title;

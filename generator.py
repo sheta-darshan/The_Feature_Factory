@@ -23,14 +23,10 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if REPLICATE_API_TOKEN:
     os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
-async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Cinematic Photo") -> dict:
+async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "Auto", caption_preset: str = "Auto") -> dict:
     """
     Sends the user's thought to Gemini to generate a script and YouTube SEO metadata.
-    Returns a dictionary containing:
-      - title: YouTube title
-      - description: SEO description with timestamps
-      - tags: comma-separated hashtags and tags
-      - segments: list of segments with text_to_speak and visual_prompt
+    Auto-detects and resolves optimal visual style, narrator voice, duration, layout format, and caption preset based on the topic.
     """
     style_guidelines = {
         "Cinematic Photo": "cinematic, dramatic lighting, detailed 8k photography, realistic, depth of field",
@@ -38,49 +34,109 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
         "Cyberpunk": "cyberpunk style, neon glow, futuristic technology, dark rainy city, hyper-detailed, synthwave color palette",
         "Retro Anime": "90s retro anime style, hand-drawn aesthetic, Studio Ghibli inspired, vibrant colors, detailed cel shading",
         "Steampunk Oil Painting": "steampunk aesthetic, textured oil painting style, visible brush strokes, brass and copper mechanisms, warm historical tones",
-        "Storybook Sketch Art": "storybook sketch art style, hand-drawn charcoal and pencil illustration, detailed sketching, cross-hatched shading, textured watercolor wash, high artistic contrast, vintage storybook aesthetic"
+        "Storybook Sketch Art": "storybook sketch art style, hand-drawn charcoal and pencil illustration, detailed sketching, cross-hatched shading, textured watercolor wash, high artistic contrast, vintage storybook aesthetic",
+        "Cosmic Synthwave / Hologram": "cosmic synthwave style, neon wireframe grids, glowing digital holographic overlays, high tech star charts, deep purple and cyan color palette",
+        "Traditional Ink Wash (Sumi-e)": "traditional Japanese sumi-e ink wash style, fluid brush strokes, serene minimalist composition, soft watercolor bleeds, elegant black and grey wash",
+        "Claymation / Stop-Motion": "tactile claymation style, hand-modeled clay figures, stop-motion plasticine textures, whimsical playful expressions, soft warm studio lighting",
+        "Comic Book Noir": "gritty comic book noir style, high contrast ink panels, dramatic shadows, bold halftone dot textures, classic dark detective illustration aesthetic"
     }
-    chosen_style = style_guidelines.get(visual_style, style_guidelines["Cinematic Photo"])
-
+    
+    # Generate system prompt containing rules for Auto configuration mapping
     prompt = f"""
-    You are an expert cinematic director, speculative sci-fi storyteller, and high-retention short-form video scriptwriter.
-    Break down the following thought/topic into a sequence of short video segments for a video around {duration_seconds} seconds long.
-    Each segment must last approximately 5 to 10 seconds (roughly 15 to 25 words of spoken narration per segment).
-    The narration should flow naturally as a single continuous script.
+    You are an expert cinematic director, speculative storyteller, and high-retention short-form video scriptwriter.
+    Break down the following thought/topic into a sequence of short video segments.
     
     CRITICAL HIGH-RETENTION STORYTELLING GUIDELINES:
-    1. Hook (Segment 1 - 0 to 5s): Start "in media res" (in the middle of the action/consequences) with an immediate, scroll-stopping, dramatic statement or paradox.
+    1. Hook (Segment 1 - 0 to 5s): Start "in media res" (in the middle of the action) with a scroll-stopping statement or paradox.
        - BANNED CLICHÉS: Never start with "Have you ever wondered...", "Imagine a world...", "What if...", "In this video...", or greeting the audience.
        - Good Hook Example: "Tomorrow morning, every computer on Earth shuts down... permanently."
-    2. Stakes / Promise (Segment 2 - 5 to 10s): Establish the global stakes or rules of this speculative scenario immediately. Make the viewer feel the scale of the threat or wonder.
+    2. Stakes / Promise (Segment 2 - 5 to 10s): Establish the global stakes or rules of this speculative scenario immediately.
     3. Sensory, Punchy & Simple Conversational Narrations:
        - Keep sentences short, active, and direct. Break up long ideas.
        - BANNED VOCABULARY: Do not use complex, obscure, academic, or rare words (e.g. "exodus", "atrophy", "paradigm", "depletion", "stratification", "volatility", "resonance", "apartheid", "superposition").
-       - Reading Level: Spoken narration must be written at a 4th-grade (approx. 10-year-old child) reading level. Use common conversational English that any average person globally can instantly follow and understand.
+       - Reading Level: Spoken narration must be written at a 4th-grade (approx. 10-year-old child) reading level. Use common conversational English.
        - Use highly visual sensory vocabulary (e.g. "cold shadow", "deep hum", "rusty metal", "bitter wind") to describe feelings and sights.
        - Use ellipses `...` or em-dashes `—` to force dramatic voiceover pauses in the Edge-TTS synthesis.
-    4. Cliffhanger Loops: Every segment except the final one must end with a brief cliffhanger or unresolved statement that forces the viewer's brain to slide into the next segment.
-    5. The Polarizing Payoff (Final Segment): Deliver a final punchy takeaway. End with a highly debate-inducing, open-ended question designed to spark disagreements and discussions in the comment section.
-       - Good Payoff Example: "If you had to choose... would you go underground, or take your chances on the surface? Comment below."
+    4. Cliffhanger Loops: Every segment except the final one must end with a brief cliffhanger that forces the viewer into the next segment.
+    5. The Polarizing Payoff (Final Segment): Deliver a final punchy takeaway and a polarizing dilemma/question to drive comment section debates.
     
-    Provide highly detailed, specific visual prompts for each segment that will be fed into an AI visual generator.
-
     Thought/Topic: {thought}
+    
+    UNIVERSAL AUTO-CONFIGURATION RULES:
+    You must evaluate and recommend the best settings for this video topic.
+    If a parameter below is specified as "Auto", choose the best matching option from the lists below and set it in your JSON response. If a specific option is chosen by the user, preserve their choice.
+    
+    1. recommended_visual_style (Select the best aesthetic for the topic):
+       - "Cinematic Photo" (General realism, nature, historical events)
+       - "Dark Sci-Fi / Fantasy" (Space mysteries, monsters, planetary anomalies)
+       - "Cyberpunk" (Dystopian tech, virtual reality, hacking)
+       - "Retro Anime" (Cozy magical fantasy, floating islands, Ghibli style)
+       - "Steampunk Oil Painting" (Clockwork tech, Victorian inventions)
+       - "Storybook Sketch Art" (Classic fables, human psychology, deep thoughts)
+       - "Cosmic Synthwave / Hologram" (Quantum mechanics, digital trends, synthwave)
+       - "Traditional Ink Wash (Sumi-e)" (Zen philosophy, peaceful nature, ancient lore)
+       - "Claymation / Stop-Motion" (Quirky, humorous, child-like questions)
+       - "Comic Book Noir" (Crimes, dark investigations, detective stories)
+       
+    2. recommended_voice (Select the voice matching target regional/emotional tone):
+       - "en-US-GuyNeural" (Deep, authoritative male - best for sci-fi, cyberpunk, dark themes)
+       - "en-US-EmmaNeural" (Warm, expressive female - best for cozy anime, nature, stories)
+       - "en-GB-SoniaNeural" (British narrator - best for historical fables, Steampunk)
+       - "de-DE-FlorianMultilingualNeural" (German/multilingual tone)
+       - "es-ES-AlvaroNeural" (Spanish/European narration)
+       - "ja-JP-KeitaNeural" (Japanese)
+       - "pt-BR-AntonioNeural" (Portuguese)
+       - "hi-IN-MadhurNeural" (Hindi)
+       
+    3. recommended_duration:
+       - 30 (for high action, simple hooks)
+       - 45 (for quick fables)
+       - 60 (for deep philosophy, complex timelines)
+       - 90 (for epic historical chronicles)
+       
+    4. recommended_aspect_ratio:
+       - "16:9" (Widescreen - best for landscapes, history, oil painting)
+       - "9:16" (Vertical - best for fast action, tech thrillers, high visual movement)
+       
+    5. recommended_caption_preset:
+       - "mrbeast" (bold uppercase action words)
+       - "minimalist" (clean, centered, elegant text)
+       - "cyberpunk" (green tech/halftone)
+       - "hormozi" (high energy pop words)
+       - "tiktok" (colorful standard captions)
+
+    User Configurations (Preserve if not "Auto"):
+    - Visual Style Choice: {visual_style}
+    - Voice Choice: {voice}
+    - Target Duration Choice: {duration_seconds} (If 0, treat as "Auto")
+    - Layout Choice: {aspect_ratio}
+    - Caption Style Choice: {caption_preset}
 
     Respond strictly in JSON format. The response must be a JSON object with exactly these keys:
       "title": "a catchy, click-worthy, algorithm-friendly YouTube title based on the topic",
       "description": "an SEO-optimized YouTube description containing a compelling summary, call to action, and timestamp chapters (e.g. 00:00 - Introduction, etc.)",
       "tags": "a comma-separated string of relevant hashtags and search tags",
-      "thumbnail_prompt": "An expanded, highly detailed cinematic visual prompt for generating a click-worthy YouTube thumbnail (16:9 aspect ratio). Describe an epic, high-contrast, uncluttered scene with a strong central subject. Focus on dramatic lighting and professional framing that immediately captures attention.",
-      "thumbnail_text": "A short, extremely punchy, high-curiosity 3 to 4 word phrase to overlay on the thumbnail in bold uppercase letters (e.g., 'TIME RAN OUT!', 'GRAVITY FAILS!', 'DON'T CLICK!'). Keep it short and dramatic.",
+      "visualStyle": "the selected visual style preset",
+      "voice": "the selected Edge-TTS voice string",
+      "duration": integer duration in seconds (30, 45, 60, or 90)",
+      "aspectRatio": "the selected layout ratio ('16:9' or '9:16')",
+      "captionPreset": "the selected caption preset style",
+      "thumbnail_prompt": "An expanded, highly detailed cinematic visual prompt matching the selected visual style for generating a click-worthy YouTube thumbnail.",
+      "thumbnail_text": "A short, extremely punchy, high-curiosity 3 to 4 word phrase to overlay on the thumbnail.",
       "segments": [
          {{
            "text_to_speak": "spoken narration text for this segment, written in simple, dramatic English with pauses",
-           "visual_prompt": "An expanded, highly detailed cinematic visual prompt. Describe the specific scene composition, professional camera angles, detailed lighting parameters (e.g. volumetric rays, rim lighting, soft dramatic shadows), lens settings (e.g. shallow depth of field, macro details), color grading, and dynamic motion descriptors (e.g. slow-motion camera sweep, steam rising, wind blowing, dust particles drifting). Do not just state a style; paint it with rich descriptive modifiers for maximum visual generation fidelity."
+           "visual_prompt": "An expanded, highly detailed visual prompt matching the chosen visual style. Include dynamic camera movements or environmental motion."
          }}
       ]
-
-    Ensure the visuals strictly adhere to the following style: {chosen_style}. Make sure the prompt itself is descriptive rather than just stating the style name and always include active, cinematic camera movements or environmental motion instructions.
+    """
+    
+    # Pre-evaluate chosen style to load guidelines for prompt injection
+    # In case user requested a fixed style, we override guidelines
+    chosen_style = style_guidelines.get(visual_style, "cinematic, dramatic lighting, detailed 8k photography")
+    
+    prompt += f"""
+    Ensure the visuals strictly adhere to the guidelines of the chosen visual style. Guideline description: {chosen_style}
     """
 
     global client

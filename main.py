@@ -33,9 +33,11 @@ templates = Jinja2Templates(directory="templates")
 class ScriptRequest(BaseModel):
     thought: str
     duration: int = 60
-    visual_style: str = "Cinematic Photo"
+    visual_style: str = "Auto"
     imageModel: str = "schnell"
-    voice: str = "en-US-GuyNeural"
+    voice: str = "Auto"
+    aspectRatio: str = "Auto"
+    captionPreset: str = "Auto"
 
 class Segment(BaseModel):
     text_to_speak: str
@@ -243,7 +245,14 @@ async def api_generate_script(req: ScriptRequest):
     if not os.getenv("GEMINI_API_KEY"):
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured in .env")
     try:
-        data = await generator.generate_script(req.thought, req.duration, req.visual_style)
+        data = await generator.generate_script(
+            req.thought, 
+            duration_seconds=req.duration, 
+            visual_style=req.visual_style,
+            voice=req.voice,
+            aspect_ratio=req.aspectRatio,
+            caption_preset=req.captionPreset
+        )
         project_id = f"project_{int(time.time())}"
         # Ensure project output directory exists
         os.makedirs(f"outputs/{project_id}", exist_ok=True)
@@ -258,13 +267,14 @@ async def api_generate_script(req: ScriptRequest):
             "thumbnail_text": data.get("thumbnail_text", ""),
             "timestamp": int(time.time()),
             "status": "script_generated",
-            "aspectRatio": "",
+            "aspectRatio": data.get("aspectRatio", "16:9"),
             "videoUrl": "",
             "thought": req.thought,
-            "duration": req.duration,
-            "visualStyle": req.visual_style,
+            "duration": data.get("duration", req.duration if req.duration > 0 else 60),
+            "visualStyle": data.get("visualStyle", req.visual_style),
             "imageModel": req.imageModel,
-            "voice": req.voice,
+            "voice": data.get("voice", req.voice),
+            "captionPreset": data.get("captionPreset", req.captionPreset),
             "segments": data.get("segments", [])
         }
         with open(f"outputs/{project_id}/metadata.json", "w", encoding="utf-8") as f:
@@ -275,6 +285,11 @@ async def api_generate_script(req: ScriptRequest):
             "title": data.get("title", ""),
             "description": data.get("description", ""),
             "tags": data.get("tags", ""),
+            "visualStyle": metadata["visualStyle"],
+            "voice": metadata["voice"],
+            "duration": metadata["duration"],
+            "aspectRatio": metadata["aspectRatio"],
+            "captionPreset": metadata.get("captionPreset", "mrbeast"),
             "segments": data.get("segments", [])
         }
     except Exception as e:
