@@ -37,7 +37,8 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
         "Dark Sci-Fi / Fantasy": "epic scale dark fantasy/sci-fi, moody, mysterious atmosphere, digital art, high contrast, atmospheric fog",
         "Cyberpunk": "cyberpunk style, neon glow, futuristic technology, dark rainy city, hyper-detailed, synthwave color palette",
         "Retro Anime": "90s retro anime style, hand-drawn aesthetic, Studio Ghibli inspired, vibrant colors, detailed cel shading",
-        "Steampunk Oil Painting": "steampunk aesthetic, textured oil painting style, visible brush strokes, brass and copper mechanisms, warm historical tones"
+        "Steampunk Oil Painting": "steampunk aesthetic, textured oil painting style, visible brush strokes, brass and copper mechanisms, warm historical tones",
+        "Storybook Sketch Art": "storybook sketch art style, hand-drawn charcoal and pencil illustration, detailed sketching, cross-hatched shading, textured watercolor wash, high artistic contrast, vintage storybook aesthetic"
     }
     chosen_style = style_guidelines.get(visual_style, style_guidelines["Cinematic Photo"])
 
@@ -52,10 +53,12 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
        - BANNED CLICHÉS: Never start with "Have you ever wondered...", "Imagine a world...", "What if...", "In this video...", or greeting the audience.
        - Good Hook Example: "Tomorrow morning, every computer on Earth shuts down... permanently."
     2. Stakes / Promise (Segment 2 - 5 to 10s): Establish the global stakes or rules of this speculative scenario immediately. Make the viewer feel the scale of the threat or wonder.
-    3. Sensory & Punchy Body Narrations:
+    3. Sensory, Punchy & Simple Conversational Narrations:
        - Keep sentences short, active, and direct. Break up long ideas.
-       - Use highly sensory vocabulary (e.g. "metallic tang", "deafening hum", "freezing shadow", "shivering steel"). Describe feelings, sounds, and visuals.
-       - Use expressive punctuation like ellipses `...` or em-dashes `—` to force dramatic voiceover pauses in the Edge-TTS synthesis.
+       - BANNED VOCABULARY: Do not use complex, obscure, academic, or rare words (e.g. "exodus", "atrophy", "paradigm", "depletion", "stratification", "volatility", "resonance", "apartheid", "superposition").
+       - Reading Level: Spoken narration must be written at a 4th-grade (approx. 10-year-old child) reading level. Use common conversational English that any average person globally can instantly follow and understand.
+       - Use highly visual sensory vocabulary (e.g. "cold shadow", "deep hum", "rusty metal", "bitter wind") to describe feelings and sights.
+       - Use ellipses `...` or em-dashes `—` to force dramatic voiceover pauses in the Edge-TTS synthesis.
     4. Cliffhanger Loops: Every segment except the final one must end with a brief cliffhanger or unresolved statement that forces the viewer's brain to slide into the next segment.
     5. The Polarizing Payoff (Final Segment): Deliver a final punchy takeaway. End with a highly debate-inducing, open-ended question designed to spark disagreements and discussions in the comment section.
        - Good Payoff Example: "If you had to choose... would you go underground, or take your chances on the surface? Comment below."
@@ -692,6 +695,9 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
     temp_bg_path = f"{project_dir}/temp_thumb_bg.jpg"
     final_thumb_path = f"{project_dir}/thumbnail.jpg"
     
+    # Define dynamic dimensions based on aspect ratio
+    width, height = (1280, 720) if aspect_ratio == "16:9" else (720, 1280)
+    
     # 1. Generate high-quality thumbnail background using Flux Dev (Replicate)
     # Fallback to Schnell if Replicate is unconfigured
     print(f"Generating thumbnail background for project {project_id}...")
@@ -703,15 +709,15 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
     if not os.path.exists(temp_bg_path):
         # Create fallback dark slate background
         print("Warning: Thumbnail background generation failed. Using dark gradient fallback canvas.")
-        bg_img = Image.new("RGB", (1280, 720), color=(15, 23, 42))
+        bg_img = Image.new("RGB", (width, height), color=(15, 23, 42))
     else:
         try:
             bg_img = Image.open(temp_bg_path).convert("RGB")
             # Resize to standard YouTube thumbnail resolution
-            bg_img = bg_img.resize((1280, 720), Image.Resampling.LANCZOS)
+            bg_img = bg_img.resize((width, height), Image.Resampling.LANCZOS)
         except Exception as e:
             print(f"Error reading background file: {e}. Using slate fallback.")
-            bg_img = Image.new("RGB", (1280, 720), color=(15, 23, 42))
+            bg_img = Image.new("RGB", (width, height), color=(15, 23, 42))
         
     draw = ImageDraw.Draw(bg_img)
     
@@ -722,15 +728,15 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
         # Load heavy font (Impact is standard for YouTube thumbnails)
         font_path = "C:\\Windows\\Fonts\\impact.ttf"
         try:
-            # High-resolution font size for thumbnail (e.g. size 90)
-            font_size = 90
+            # High-resolution font size for thumbnail (e.g. size 90 for 16:9, 65 for 9:16)
+            font_size = 90 if aspect_ratio == "16:9" else 65
             font = ImageFont.truetype(font_path, font_size)
         except Exception:
             font = ImageFont.load_default()
             font_size = 32
             
         # Draw on a separate layer to allow rotation
-        text_layer = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+        text_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         layer_draw = ImageDraw.Draw(text_layer)
         
         # Word wrap text if it is too long (split into 2 lines)
@@ -744,11 +750,11 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
             
         # Draw each line on the overlay layer centered
         total_h = len(lines) * (font_size + 15)
-        start_y = (720 - total_h) / 2
+        start_y = (height - total_h) / 2
         
         for idx, line_text in enumerate(lines):
             line_w = layer_draw.textlength(line_text, font=font)
-            line_x = (1280 - line_w) / 2
+            line_x = (width - line_w) / 2
             line_y = start_y + idx * (font_size + 15)
             
             # Draw heavy black 3D Drop Shadow first
