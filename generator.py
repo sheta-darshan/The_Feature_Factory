@@ -1134,7 +1134,7 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
     return animated_clip
 
 
-def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", highlight_color_name="Yellow", position_name="Bottom", add_watermark=False, is_last_segment=False, caption_preset="default", brand="", price="", cta=""):
+def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", highlight_color_name="Yellow", position_name="Bottom", add_watermark=False, is_last_segment=False, caption_preset="default", brand="", price="", cta="", is_first_segment=False, niche=""):
     """
     Draws custom styled highlighted subtitles, watermark, and dynamic overlays based on a style preset.
     """
@@ -1488,6 +1488,7 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     brand_meta = ""
     price_meta = ""
     cta_meta = ""
+    niche_meta = ""
     if segments and segments[0].get("audio_path"):
         p_dir = os.path.dirname(segments[0].get("audio_path"))
         p_meta = os.path.join(p_dir, "metadata.json")
@@ -1498,6 +1499,7 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                     brand_meta = meta_data.get("brand", "")
                     price_meta = meta_data.get("price", "")
                     cta_meta = meta_data.get("cta", "")
+                    niche_meta = meta_data.get("niche", "")
             except Exception as me:
                 print(f"Warning: Failed loading metadata overlays: {me}")
 
@@ -1586,10 +1588,11 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             
             # Dynamic subtitle & watermark frame processor function
             is_last = (i == len(segments) - 1)
-            def make_subtitle_filter(timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val):
+            is_first = (i == 0)
+            def make_subtitle_filter(timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val, is_first_seg, n_val):
                 def filter_func(get_frame, t):
                     frame = get_frame(t)
-                    return draw_text_on_frame(frame, t, timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val)
+                    return draw_text_on_frame(frame, t, timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val, is_first_seg, n_val)
                 return filter_func
             
             filter_to_apply = make_subtitle_filter(
@@ -1603,7 +1606,9 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                 caption_preset,
                 brand_meta,
                 price_meta,
-                cta_meta
+                cta_meta,
+                is_first,
+                niche_meta
             )
             
             if hasattr(img_clip, "transform"):
@@ -1666,6 +1671,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         
     if not clips:
         raise ValueError("No valid video segments to assemble")
+        
+    # Apply crossfadein to all overlapping clips (except the first one) to achieve true cross-dissolve
+    for idx_clip in range(1, len(clips)):
+        clips[idx_clip] = clips[idx_clip].crossfadein(0.5)
         
     # Use padding=-0.5 to overlap clips by 0.5s and automatically cross-dissolve them
     if len(clips) > 1:
