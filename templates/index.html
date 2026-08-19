@@ -555,7 +555,15 @@
                             <option value="Restaurants">Restaurants</option>
                         </select>
                     </div>
-                    <div class="form-group" style="flex:2;">
+                    <div class="form-group" style="flex:1;">
+                        <label for="brand-tone-select">👑 Brand Tone / Aesthetic</label>
+                        <select id="brand-tone-select" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                            <option value="Luxury Prestige" selected>👑 Luxury & Prestige (Craftsmanship & Heritage)</option>
+                            <option value="Viral Trend">⚡ Viral Trend (Problem-Solution & Energy)</option>
+                            <option value="Minimalist Organic">🌿 Minimalist Organic (Calm & Serene Aesthetic)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1.5;">
                         <label for="product-title">Product Name/Title</label>
                         <input type="text" id="product-title" placeholder="e.g. Floral Summer Kurti, Diamond Promise Ring" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
                     </div>
@@ -1272,6 +1280,7 @@
             const cta = document.getElementById("product-cta").value.trim();
             const image_path = document.getElementById("product-image-path").value;
             const isolate_background = document.getElementById("isolate-background").checked;
+            const brand_tone = document.getElementById("brand-tone-select") ? document.getElementById("brand-tone-select").value : "Luxury Prestige";
             
             const duration = parseInt(document.getElementById("duration-input").value) || 30;
             const visual_style = document.getElementById("style-select").value;
@@ -1299,7 +1308,7 @@
                 const response = await fetch("/api/generate-script", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset })
+                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone })
                 });
 
                 if (!response.ok) {

@@ -50,6 +50,7 @@ class ScriptRequest(BaseModel):
     voice: str = "Auto"
     aspectRatio: str = "9:16"
     captionPreset: str = "Auto"
+    brand_tone: str = "Luxury Prestige"
 
 class Segment(BaseModel):
     text_to_speak: str
@@ -329,6 +330,7 @@ async def api_generate_script(req: ScriptRequest):
             "brand": req.brand,
             "price": req.price,
             "cta": req.cta,
+            "brandTone": req.brand_tone,
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
@@ -466,7 +468,8 @@ async def api_generate_assets(req: AssetRequest):
                         image_path_raw,
                         req.aspectRatio,
                         img_model_to_use,
-                        isolate_bg
+                        isolate_bg,
+                        meta.get("niche", "General Retail")
                     )
                 else:
                     return await asyncio.to_thread(

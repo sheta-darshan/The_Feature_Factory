@@ -582,7 +582,29 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
         return output_path
 
 
-def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True) -> str:
+
+def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail") -> str:
+    """
+    Enriches basic product inpainting prompts with professional studio optics,
+    lighting physics, lens profiles, and surface interaction details.
+    """
+    niche_lower = (niche or "").lower()
+    if "jewel" in niche_lower:
+        lighting_tokens = "8k macro commercial photography, Hasselblad 100mm f/1.8 lens, directional spotlight with sharp caustic refractions and gentle velvet shadow falloff, pristine reflection, subtle diamond light flare, hyper-clean luxury showcase"
+    elif "fashion" in niche_lower or "clothing" in niche_lower:
+        lighting_tokens = "Vogue editorial commercial photography, 35mm film grain, warm golden-hour rim lighting, organic textile weave texture, gentle ambient shadow, high-end lookbook set"
+    elif "cosmetic" in niche_lower or "beauty" in niche_lower:
+        lighting_tokens = "High-end skincare commercial photography, diffuse Scandinavian morning daylight, delicate dewy mist, frosted glass reflection, subtle botanical shadow casting, ultra-clean aesthetic"
+    elif "furniture" in niche_lower or "home" in niche_lower or "decor" in niche_lower:
+        lighting_tokens = "Architectural Digest interior photography, natural side window light, warm timber ambient glow, soft depth of field, elegant minimalist living space"
+    elif "restaurant" in niche_lower or "food" in niche_lower:
+        lighting_tokens = "Michelin-guide gourmet food photography, 45-degree warm directional key light, delicate rising steam, dark slate texture, delicious macro detail, rich color grading"
+    else:
+        lighting_tokens = "Award-winning commercial product photography, professional 3-point studio lighting, subtle surface reflection, sharp depth of field, crisp 8k details"
+
+    return f"{raw_prompt}, {lighting_tokens}"
+
+def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True, niche: str = "General Retail") -> str:
     """
     Uses local rembg library to remove the background of the product photo,
     converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate.
@@ -1515,7 +1537,8 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     environmental_sfx_clips = []
     curr_start = 0.0
     
-    motion_types = ["zoom_in", "zoom_out", "pan_left", "pan_right"]
+    # Luxury commercial ads use slow, controlled macro zoom-ins and gentle subtle pans
+    motion_types = ["zoom_in", "zoom_in", "zoom_out", "pan_right"]
     
     # Read project metadata to pass brand/price/cta overlays
     brand_meta = ""
