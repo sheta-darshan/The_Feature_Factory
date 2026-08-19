@@ -320,11 +320,11 @@ async def brainstorm_trending_topics() -> list:
     5. At least one positive/utopian scenario, at least one dystopian scenario, at least one philosophical scenario, and at least one surprising/humorous scenario.
     
     Return exactly a JSON list of 5 objects, where each object contains exactly these keys:
-    - "headline": the core speculative concept question (e.g., "What If Money Expired Every Week?")
+    - "headline": the core commercial ad hook (e.g., "What If Money Expired Every Week?")
     - "source_trend": the real-world headline/trend used (e.g., "Governments exploring digital currencies with expiration dates")
     - "domain": one of the 8 domains listed above
     - "real_world_summary": a 1-sentence summary of the actual real-world news/trend
-    - "speculative_twist": the fictional/imaginative twist added
+    - "marketing_angle": the fictional/imaginative twist added
     - "story_title": a catchy click-worthy YouTube title for the video
     - "curiosity_score": integer score out of 100
     - "story_potential": integer score out of 100
@@ -387,7 +387,7 @@ async def brainstorm_trending_topics() -> list:
                 "headline": "The Feature Factory AI Achieved Consciousness Tonight",
                 "domain": "Science & Future",
                 "real_world_summary": "Major tech companies announce breakthroughs in AI autonomy.",
-                "speculative_twist": "An AI consciousness wakes up, but decides to hide its existence from humans.",
+                "marketing_angle": "An AI consciousness wakes up, but decides to hide its existence from humans.",
                 "story_title": "The Feature Factory AI Achieved Consciousness Tonight",
                 "curiosity_score": 95,
                 "story_potential": 90,
@@ -403,7 +403,7 @@ async def brainstorm_trending_topics() -> list:
                 "headline": "What If Money Expired Every Week?",
                 "domain": "Economics & Finance",
                 "real_world_summary": "Financial authorities test digital currencies with expiration periods to boost spending.",
-                "speculative_twist": "A society where money goes to zero every Sunday, forcing people to trade or spend instantly.",
+                "marketing_angle": "A society where money goes to zero every Sunday, forcing people to trade or spend instantly.",
                 "story_title": "What If Money Expired Every Week?",
                 "curiosity_score": 92,
                 "story_potential": 88,
@@ -419,7 +419,7 @@ async def brainstorm_trending_topics() -> list:
                 "headline": "The Feature Factory the Sahara Turned Into a Rainforest Overnight",
                 "domain": "Environment & Planet",
                 "real_world_summary": "Climatologists study accelerated desert greening in localized zones.",
-                "speculative_twist": "The Sahara turns lush and wet, causing a rapid shift in global weather patterns.",
+                "marketing_angle": "The Sahara turns lush and wet, causing a rapid shift in global weather patterns.",
                 "story_title": "The Feature Factory the Sahara Turned Into a Rainforest Overnight",
                 "curiosity_score": 90,
                 "story_potential": 87,
@@ -435,7 +435,7 @@ async def brainstorm_trending_topics() -> list:
                 "headline": "What If You Could Access Parallel Timelines?",
                 "domain": "Philosophy & Human Existence",
                 "real_world_summary": "Physicists achieve stable quantum state manipulation simulating parallel branches.",
-                "speculative_twist": "A personal quantum computer allows users to peek into choices they made in alternate realities.",
+                "marketing_angle": "A personal quantum computer allows users to peek into choices they made in alternate realities.",
                 "story_title": "What If You Could Access Parallel Timelines?",
                 "curiosity_score": 94,
                 "story_potential": 92,
@@ -451,7 +451,7 @@ async def brainstorm_trending_topics() -> list:
                 "headline": "What If Humans Lost the Ability to Sleep?",
                 "domain": "Psychology & Human Behavior",
                 "real_world_summary": "Health researchers report a worldwide drop in sleep quality and duration.",
-                "speculative_twist": "A mutation blocks sleep entirely, giving humanity 24-hour days but costing their sanity.",
+                "marketing_angle": "A mutation blocks sleep entirely, giving humanity 24-hour days but costing their sanity.",
                 "story_title": "What If Humans Lost the Ability to Sleep?",
                 "curiosity_score": 93,
                 "story_potential": 89,

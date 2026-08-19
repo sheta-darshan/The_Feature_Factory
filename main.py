@@ -16,7 +16,7 @@ import generator
 
 load_dotenv()
 
-app = FastAPI(title="ImagineIf Factory")
+app = FastAPI(title="The Feature Factory - AI Product Content Studio")
 
 # Ensure required directories exist
 os.makedirs("outputs", exist_ok=True)

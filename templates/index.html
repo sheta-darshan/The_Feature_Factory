@@ -1802,6 +1802,22 @@ const proj = data;
         }
 
         let isFetchingTrends = false;
+                async function fillRandomTopic() {
+            try {
+                const res = await fetch('/api/random-product-demo');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (document.getElementById('product-niche')) document.getElementById('product-niche').value = data.niche || "Clothing/Fashion";
+                    if (document.getElementById('product-title')) document.getElementById('product-title').value = data.product_title || "";
+                    if (document.getElementById('product-brand')) document.getElementById('product-brand').value = data.brand || "";
+                    if (document.getElementById('product-price')) document.getElementById('product-price').value = data.price || "";
+                    if (document.getElementById('product-cta')) document.getElementById('product-cta').value = data.cta || "";
+                    if (document.getElementById('visual-style-select') && data.visual_style) document.getElementById('visual-style-select').value = data.visual_style;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
         function toggleTrendingPanel() {
             const panel = document.getElementById("trending-ideas-panel");
             if (panel.style.display === "none") {

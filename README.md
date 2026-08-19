@@ -1,96 +1,81 @@
-# TheFeatureFactory Factory 🎬
+# 🏭 The Feature Factory — AI Product Content Studio
 
-An end-to-end AI agent pipeline that automates the generation of speculative, high-retention YouTube Shorts and videos from a single text concept.
-
-Designed as an AI-powered assistant for content creators, it generates scripts, creates context-aware visual scenes, builds expressive voice narration, synchronizes word-level subtitles, and auto-mixes background audio with cinematic transitions.
+**The Feature Factory** is an end-to-end automated AI studio that transforms raw product photos into high-converting, professional short-form video ads (Instagram Reels, YouTube Shorts, and WhatsApp Statuses) for local retail businesses, brands, and e-commerce stores.
 
 ---
 
-## 🚀 Key Features
+## 🌟 What It Does
 
-*   **Gemini 2.5 Scripting & Storyboarding**: Automatically designs a full scene-by-scene script using structured JSON schemas and curated visuals.
-*   **Varied Ken Burns Camera Sweeps**: Applies randomized zoom-in, zoom-out, pan-left, and pan-right motions to prevent repetitive slideshow aesthetics.
-*   **Dynamic Audio Ducking**: Auto-mixes background tracks by ducking music to `8%` during voice narration and boosting it to `22%` during speech pauses and scene transitions.
-*   **Expressive Word-Level Captions**: Subtitles highlight the active spoken word in real-time, coloring words dynamically to indicate questions, excitement (`!`), or pauses (`...`).
-*   **Safety Staggering**: Staggers asset generation requests to guarantee high success rates and prevent rate limits under credit-constrained API environments.
-*   **Single-Segment Editor (Credit Saver)**: Allows creators to modify individual storyboard cells and regenerate *only* that cell's audio or image in-place, preserving API quotas.
+Local businesses often lack professional photography, lighting gear, video editors, and agency budgets. **The Feature Factory** allows them to turn simple product snaps into agency-grade marketing assets in seconds:
 
----
-
-## 🛠️ System Architecture
-
-```mermaid
-graph TD
-    User([User Prompt]) --> Gemini[Gemini 2.5 Scripting Agent]
-    Gemini --> JSON[JSON Storyboard Plan]
-    JSON --> Split[Segment Splitter]
-    
-    subgraph Parallel Generation Loop
-        Split --> Voice[Voice Synthesis Agent Edge-TTS]
-        Split --> Visual[Visual Generation Agent Flux / Replicate]
-    end
-    
-    Voice --> Timing[Word-Level JSON Timing Map]
-    Visual --> Image[High-Res Scene Image]
-    
-    Timing --> Video[MoviePy Composition Engine]
-    Image --> Video
-    
-    subgraph Video Post-Production
-        Video --> KenBurns[Ken Burns Camera Sweeps Zoom/Pan]
-        Video --> Subs[Expressive Subtitle Overlays]
-        Video --> Ducking[Dynamic Audio Ducking 8% vs 22%]
-    end
-    
-    Ducking --> Output[Final MP4 Video & YouTube SEO Tags]
-```
+1. **AI Background Isolation & Inpainting**: Uses local `rembg` background subtraction combined with Replicate's `black-forest-labs/flux-fill-pro` to place isolated products into photorealistic commercial lifestyle environments.
+2. **Multi-Angle Support**: Upload up to 3 product angles (Hero front, lifestyle wearing/model shot, detail close-up) that stitch seamlessly across slides.
+3. **Problem-Solution Commercial Copywriting**: Uses Google Gemini to generate high-retention 3-slide ad scripts (Hook & Pain Point ➔ Lifestyle Product Solution ➔ Closing Brand Offer & CTA).
+4. **Studio Voiceovers**: Generates voiceover narrations with Microsoft Edge TTS customized by product category (Luxury Studio, Fashion Editorial, Cozy Home Decor, Gourmet Food).
+5. **Dynamic Video Assembly**: MoviePy-powered compilation with true cross-dissolve slide transitions, audio ducking (BGM reduces during speech), Slide 1 attention-grabbing Hook banners, and Slide 3 Commercial Checkout Cards (`[Brand] | [Price] | [CTA]`).
+6. **Platform-Specific Social Media Kits**: Delivers one-click copy-pasteable captions formatted for **Instagram Reels** (with first-line fold protection & hashtag packs), **YouTube Shorts** (with `#shorts` indexing), and **WhatsApp Statuses** (conversational chat reply triggers).
 
 ---
 
-## ⚙️ Setup & Installation
+## 🚀 Getting Started
 
 ### 1. Prerequisites
-Ensure you have **Python 3.10+** installed. You will also need active API keys for:
-*   [Google Gemini API](https://aistudio.google.com/)
-*   [Replicate API](https://replicate.com/)
+- Python 3.10+
+- [FFmpeg](https://ffmpeg.org/) installed and available in your system `PATH`.
+- API keys:
+  - `GEMINI_API_KEY` (Google AI Studio)
+  - `REPLICATE_API_TOKEN` (Replicate for FLUX Inpainting)
 
-### 2. Installation
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/sheta-darshan/TheFeatureFactory-Factory.git
-    cd TheFeatureFactory-Factory
-    ```
-2.  Create and activate a virtual environment:
-    ```bash
-    python -m venv .venv
-    # On Windows:
-    .venv\Scripts\activate
-    # On macOS/Linux:
-    source .venv/bin/activate
-    ```
-3.  Install the required dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### 2. Installation & Setup
+```bash
+# Clone repository
+git clone https://github.com/sheta-darshan/The_Feature_Factory.git
+cd The_Feature_Factory
 
-### 3. Environment Variables
-Create a file named `.env` in the root directory:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-REPLICATE_API_TOKEN=your_replicate_api_token_here
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-### 4. Running the Application
-Launch the FastAPI development server:
+### 3. Configure Environment
+Copy `.env.template` to `.env` and fill in your API tokens:
+```ini
+GEMINI_API_KEY=your_gemini_api_key_here
+REPLICATE_API_TOKEN=your_replicate_api_token_here
+PORT=8001
+```
+
+### 4. Run the Studio
 ```bash
 python main.py
 ```
-Open your browser and navigate to `http://127.0.0.1:8000`.
+Open your browser and navigate to `http://127.0.0.1:8001`.
 
 ---
 
-## 🎨 Course Concepts Applied
-This capstone project implements several key concepts taught in Kaggle's AI Agents course:
-1.  **Multi-Agent Coordination**: Splits video building into dedicated task-specialists (storyboard agent, image generation agent, voice synthesis agent, and video composition editor).
-2.  **Antigravity Collaboration**: Built, refined, and tested interactively with the Antigravity pair-programming agent workspace.
-3.  **Local Dev & Security**: Utilizes isolated `.env` context to safeguard keys and applies staggered task queue throttling.
+## 📂 Project Architecture
+
+```text
+The_Feature_Factory/
+├── main.py                    # FastAPI server & video pipeline orchestrator
+├── generator.py               # Gemini copywriting, inpainting & MoviePy video assembler
+├── templates/
+│   └── index.html             # Premium SaaS dark-mode studio dashboard
+├── static/
+│   ├── fonts/                 # Bundled typography (Outfit-Bold.ttf)
+│   ├── music/                 # Background music tracks & notification chimes
+│   └── sfx/                   # Coin clinks, whooshes, and clock audio effects
+├── uploads/                   # Temporary store for uploaded product photos
+├── outputs/                   # Saved campaigns, thumbnails, and compiled MP4 reels
+├── content_calendar_365.md    # 365-day retail product marketing reel idea calendar
+├── requirements.txt           # Dependency specifications
+└── .env.template              # Environment variables template
+```
+
+---
+
+## 📄 License
+MIT License. Built for repeatable, high-converting product marketing content production.
