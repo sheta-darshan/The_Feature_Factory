@@ -43,6 +43,7 @@ class ScriptRequest(BaseModel):
     price: str = ""
     cta: str = ""
     image_path: str = ""
+    isolate_background: bool = True
     duration: int = 30
     visual_style: str = "Auto"
     imageModel: str = "schnell"
@@ -258,6 +259,18 @@ async def api_upload_product_image(file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
     return {"filePath": filePath}
 
+@app.post("/api/upload-product-images")
+async def api_upload_product_images(files: List[UploadFile] = File(...)):
+    os.makedirs("uploads", exist_ok=True)
+    import shutil
+    saved_paths = []
+    for file in files:
+        filePath = f"uploads/{int(time.time())}_{file.filename}"
+        with open(filePath, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        saved_paths.append(filePath)
+    return {"filePaths": saved_paths}
+
 @app.post("/api/generate-script")
 async def api_generate_script(req: ScriptRequest):
     """
@@ -299,7 +312,8 @@ async def api_generate_script(req: ScriptRequest):
             "brand": req.brand,
             "price": req.price,
             "cta": req.cta,
-            "rawProductImage": req.image_path,
+            "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
+            "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
             "duration": data.get("duration", req.duration if req.duration > 0 else 30),
             "visualStyle": data.get("visualStyle", req.visual_style),
@@ -410,8 +424,14 @@ async def api_generate_assets(req: AssetRequest):
             async with image_semaphore:
                 # Add a 10.0 second pause between generations to stay within Replicate's 6/min rate limit
                 await asyncio.sleep(10.0)
-                raw_img = meta.get("rawProductImage", "")
+                raw_imgs = meta.get("rawProductImages", [])
+                isolate_bg = meta.get("isolateBackground", True)
                 img_model_to_use = "schnell" if req.imageModel == "video" else req.imageModel
+                
+                # Pick slide-specific product angle if multiple uploaded
+                raw_img = ""
+                if raw_imgs and len(raw_imgs) > 0:
+                    raw_img = raw_imgs[index] if index < len(raw_imgs) else raw_imgs[0]
                 
                 if raw_img:
                     return await asyncio.to_thread(
@@ -420,7 +440,8 @@ async def api_generate_assets(req: AssetRequest):
                         raw_img,
                         image_path_raw,
                         req.aspectRatio,
-                        img_model_to_use
+                        img_model_to_use,
+                        isolate_bg
                     )
                 else:
                     return await asyncio.to_thread(
@@ -509,8 +530,14 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
         # 2. Regenerate visual asset if requested
         if req.regenerateImage:
             async def run_image():
-                raw_img = meta.get("rawProductImage", "")
+                raw_imgs = meta.get("rawProductImages", [])
+                isolate_bg = meta.get("isolateBackground", True)
                 img_model_to_use = "schnell" if req.imageModel == "video" else req.imageModel
+                
+                raw_img = ""
+                if raw_imgs and len(raw_imgs) > 0:
+                    raw_img = raw_imgs[req.segmentIndex] if req.segmentIndex < len(raw_imgs) else raw_imgs[0]
+                
                 if raw_img:
                     return await asyncio.to_thread(
                         generator.generate_product_image_replicate,
@@ -518,7 +545,8 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
                         raw_img,
                         image_path_raw,
                         req.aspectRatio,
-                        img_model_to_use
+                        img_model_to_use,
+                        isolate_bg
                     )
                 else:
                     return await asyncio.to_thread(

@@ -579,14 +579,34 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
         return output_path
 
 
-def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell") -> str:
+def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True) -> str:
     """
     Uses local rembg library to remove the background of the product photo,
-    converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate
-    to place the product in the requested prompt setting.
+    converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate.
+    If isolate_background is False, it skips AI background generation and directly copies
+    the original product photo as the visual asset for that slide.
     """
     import base64
+    import shutil
     from rembg import remove
+    
+    # Check if isolation is disabled
+    if not isolate_background:
+        if raw_image_path and os.path.exists(raw_image_path):
+            print(f"Background isolation disabled. Copying original photo directly: {raw_image_path} -> {output_path}")
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            # Copy file (using PIL to normalize format to JPEG)
+            try:
+                with Image.open(raw_image_path) as img:
+                    jpg_path = os.path.splitext(output_path)[0] + ".jpg"
+                    img.convert("RGB").save(jpg_path, "JPEG")
+                    return jpg_path
+            except Exception as e:
+                print(f"Failed copying original photo: {e}")
+                # Fallback to copy directly
+                shutil.copy2(raw_image_path, output_path)
+                return output_path
     # Normalize aspect ratio for Replicate inputs
     if aspect_ratio == "Auto" or not aspect_ratio:
         aspect_ratio = "9:16"
