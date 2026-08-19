@@ -262,12 +262,29 @@ async def api_upload_product_image(file: UploadFile = File(...)):
 @app.post("/api/upload-product-images")
 async def api_upload_product_images(files: List[UploadFile] = File(...)):
     os.makedirs("uploads", exist_ok=True)
-    import shutil
+    from PIL import Image
     saved_paths = []
     for file in files:
-        filePath = f"uploads/{int(time.time())}_{file.filename}"
-        with open(filePath, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        filePath = f"uploads/{int(time.time())}_{os.path.splitext(file.filename)[0]}.jpg"
+        try:
+            # Load file in PIL to compress/scale
+            with Image.open(file.file) as img:
+                # Max dimension 1536px safeguard
+                max_dim = 1536
+                w, h = img.size
+                if w > max_dim or h > max_dim:
+                    scale = max_dim / max(w, h)
+                    img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+                
+                # Save as compressed JPEG
+                img.convert("RGB").save(filePath, "JPEG", quality=85)
+                print(f"Compressed and saved upload: {filePath} ({img.size})")
+        except Exception as e:
+            print(f"Failed optimizing upload {file.filename} ({e}), falling back to direct copy.")
+            file.file.seek(0)
+            with open(filePath, "wb") as buffer:
+                import shutil
+                shutil.copyfileobj(file.file, buffer)
         saved_paths.append(filePath)
     return {"filePaths": saved_paths}
 

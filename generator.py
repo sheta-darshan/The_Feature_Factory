@@ -1168,9 +1168,19 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         # Use a small simple font size
         watermark_font_path = "C:\\Windows\\Fonts\\arial.ttf"
         try:
-            watermark_font = ImageFont.truetype(watermark_font_path, 28 if target_size[0] < 1200 else 24)
+            if os.path.exists(watermark_font_path):
+                watermark_font = ImageFont.truetype(watermark_font_path, 28 if target_size[0] < 1200 else 24)
+            else:
+                raise OSError()
         except Exception:
-            watermark_font = ImageFont.load_default()
+            local_font = "static/fonts/Outfit-Bold.ttf"
+            if os.path.exists(local_font):
+                try:
+                    watermark_font = ImageFont.truetype(local_font, 22 if target_size[0] < 1200 else 18)
+                except Exception:
+                    watermark_font = ImageFont.load_default()
+            else:
+                watermark_font = ImageFont.load_default()
         
         # Position: Top Right corner
         w_w = draw.textlength(watermark_text, font=watermark_font)
@@ -1725,8 +1735,8 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                 def volume_duck_filter(t):
                     import numpy as np
                     fade_duration = 0.4
-                    low_vol = 0.08
-                    high_vol = 0.22
+                    low_vol = 0.12  # Duck BGM to 12% during active voiceover
+                    high_vol = 0.35 # Restore BGM to 35% during pauses
                     
                     def get_vol_for_t(time_val):
                         # Check if inside any speaking interval
@@ -1752,9 +1762,9 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                     bg_clip_ducked = bg_clip_looped.transform_volume(volume_duck_filter)
                 except Exception as ve:
                     print(f"Warning: Ducking transform failed ({ve}), using fallback.")
-                    bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.12)
+                    bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.15)
             else:
-                bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.12)
+                bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.15)
                 
             # Mix music with narration audio
             mixed_audio = CompositeAudioClip([final_clip.audio, bg_clip_ducked])
