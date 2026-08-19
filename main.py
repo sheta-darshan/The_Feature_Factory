@@ -4,7 +4,7 @@ import time
 import shutil
 import asyncio
 from typing import List
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -25,6 +25,11 @@ os.makedirs("static/music", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
 # Mount outputs for static file serving
+# Ensure static directories exist before mounting to prevent Starlette RuntimeError
+os.makedirs("outputs", exist_ok=True)
+os.makedirs("static", exist_ok=True)
+os.makedirs("uploads", exist_ok=True)
+
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

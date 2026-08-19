@@ -8,3 +8,5 @@ python-dotenv
 pillow
 jinja2
 pydantic
+rembg[cpu]
+python-multipart
