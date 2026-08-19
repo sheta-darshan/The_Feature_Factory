@@ -633,18 +633,31 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
             }
         )
         
-        if not output or len(output) == 0:
+        # Dynamically read/download the output from Replicate FLUX Fill (can be list, string, or FileOutput)
+        if not output:
             raise RuntimeError("Replicate FLUX Fill returned no outputs.")
             
-        # Download output
-        image_url = output[0]
-        url_str = image_url.url if hasattr(image_url, "url") else str(image_url)
-        response = httpx.get(url_str, timeout=30.0)
-        if response.status_code != 200:
-            raise RuntimeError("Failed downloading filled image.")
+        if hasattr(output, "read"):
+            content = output.read()
+        elif isinstance(output, list) and len(output) > 0:
+            item = output[0]
+            if hasattr(item, "read"):
+                content = item.read()
+            else:
+                url_str = item.url if hasattr(item, "url") else str(item)
+                response = httpx.get(url_str, timeout=30.0)
+                if response.status_code != 200:
+                    raise RuntimeError("Failed downloading filled image from list URL.")
+                content = response.content
+        else:
+            url_str = str(output)
+            response = httpx.get(url_str, timeout=30.0)
+            if response.status_code != 200:
+                raise RuntimeError("Failed downloading filled image from single URL.")
+            content = response.content
             
         with open(output_path, "wb") as f_out:
-            f_out.write(response.content)
+            f_out.write(content)
             
         with Image.open(output_path) as img:
             jpg_path = os.path.splitext(output_path)[0] + ".jpg"
