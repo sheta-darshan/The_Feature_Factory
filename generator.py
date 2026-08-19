@@ -56,7 +56,10 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
     
     Return strictly in JSON format. The response must be a JSON object with exactly these keys:
       "title": "a catchy click-worthy title for the campaign",
-      "description": "an SEO social media description with tags",
+      "instagram_caption": "A scroll-stopping Instagram Reel caption starting with a strong hook (max 120 chars) before truncation, and ending with exactly 5-8 relevant hashtags.",
+      "shorts_title": "A short punchy YouTube Shorts title under 55 characters including #shorts",
+      "shorts_description": "A YouTube Shorts description optimized for search traffic containing #shorts and #youtubeshorts",
+      "whatsapp_status_text": "An ultra-concise, conversational WhatsApp Status text (max 200 characters) ending with a direct chat reply call to action (e.g. 'Reply to order!')",
       "tags": "hashtags matching the niche",
       "visualStyle": "one of: High-End Fashion Editorial, Luxury Studio Showcase, Minimalist Scandinavian Lifestyle, Gourmet Food Editorial, Clean Commercial Photography, Bright Cinematic Lifestyle",
       "voice": "Choose the narrator voice that matches the product niche: en-US-EmmaNeural or en-US-AndrewNeural for Clothing/Fashion (upbeat/trendy), en-US-AvaNeural or en-GB-SoniaNeural for Jewellery/Cosmetics (luxury/premium), en-US-GuyNeural for Furniture/Home Decor (relaxed/premium), en-US-BrianNeural for Restaurants (enthusiastic/friendly)",

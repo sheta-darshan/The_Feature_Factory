@@ -332,6 +332,10 @@ async def api_generate_script(req: ScriptRequest):
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
+            "instagramCaption": data.get("instagram_caption", ""),
+            "shortsTitle": data.get("shorts_title", ""),
+            "shortsDescription": data.get("shorts_description", ""),
+            "whatsappStatusText": data.get("whatsapp_status_text", ""),
             "duration": data.get("duration", req.duration if req.duration > 0 else 30),
             "visualStyle": data.get("visualStyle", req.visual_style),
             "imageModel": req.imageModel,
@@ -353,6 +357,10 @@ async def api_generate_script(req: ScriptRequest):
             "aspectRatio": metadata["aspectRatio"],
             "captionPreset": metadata.get("captionPreset", "mrbeast"),
             "alternativeHooks": metadata.get("alternativeHooks", []),
+            "instagramCaption": metadata.get("instagramCaption", ""),
+            "shortsTitle": metadata.get("shortsTitle", ""),
+            "shortsDescription": metadata.get("shortsDescription", ""),
+            "whatsappStatusText": metadata.get("whatsappStatusText", ""),
             "segments": data.get("segments", [])
         }
     except Exception as e:
