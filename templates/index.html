@@ -1113,15 +1113,48 @@
             loadProjects();
         });
 
+        
+        async function uploadProductImage(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            const formData = new FormData();
+            formData.append("file", file);
+            
+            const previewDiv = document.getElementById("product-image-preview");
+            const previewImg = previewDiv.querySelector("img");
+            previewDiv.style.display = "block";
+            previewImg.src = URL.createObjectURL(file);
+            
+            try {
+                const response = await fetch("/api/upload-product-image", {
+                    method: "POST",
+                    body: formData
+                });
+                if (!response.ok) throw new Error("Upload failed");
+                const data = await response.json();
+                document.getElementById("product-image-path").value = data.filePath;
+                console.log("Uploaded product image path:", data.filePath);
+            } catch (err) {
+                alert("Failed to upload image. Please try again.");
+                previewDiv.style.display = "none";
+            }
+        }
+
         async function generateScript() {
-            const thought = document.getElementById("thought-input").value.trim();
+            const niche = document.getElementById("product-niche").value;
+            const product_title = document.getElementById("product-title").value.trim();
+            const brand = document.getElementById("product-brand").value.trim();
+            const price = document.getElementById("product-price").value.trim();
+            const cta = document.getElementById("product-cta").value.trim();
+            const image_path = document.getElementById("product-image-path").value;
+            
             const duration = parseInt(document.getElementById("duration-input").value) || 30;
             const visual_style = document.getElementById("style-select").value;
             const imageModel = document.getElementById("model-select").value;
             const voice = document.getElementById("voice-select").value;
             
-            if (!thought) {
-                alert("Please enter a concept or thought first.");
+            if (!product_title) {
+                alert("Please enter a product title first.");
                 return;
             }
 
@@ -1141,7 +1174,7 @@
                 const response = await fetch("/api/generate-script", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ thought, duration, visual_style, imageModel, voice, aspectRatio, captionPreset })
+                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, duration, visual_style, imageModel, voice, aspectRatio, captionPreset })
                 });
 
                 if (!response.ok) {

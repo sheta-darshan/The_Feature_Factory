@@ -23,6 +23,84 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if REPLICATE_API_TOKEN:
     os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
+
+async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto") -> dict:
+    """
+    Sends the product details to Gemini to generate high-converting marketing copy and lifestyle prompts.
+    """
+    global client
+    if not client:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        
+    prompt = f"""
+    You are an expert product copywriter, advertisement director, and short-form video creator.
+    Your job is to build a high-retention marketing campaign for this product:
+    - Product Category/Niche: {niche}
+    - Product Title: {product_title}
+    - Brand Name: {brand}
+    - Product Price: {price}
+    - Call to Action (CTA): {cta}
+    
+    You must output a visual campaign strategy containing marketing captions and precise slides breakdown for a short promotional reel (approx. {duration_seconds} seconds long).
+    
+    STORYBOARD SLIDES STRUCTURE:
+    Generate exactly 3 storyboard segments/slides:
+    1. Hook Slide (0-3s): Introduce the hero product and brand in a premium, striking studio setting. Highlight the core benefit.
+    2. Lifestyle Slide (3-6s): Show a model or real-world user interacting with the product in a natural, premium lifestyle setting.
+    3. Call to Action / Closing Slide (6-8s): Show the product clearly alongside the brand name, price, and CTA text overlay.
+    
+    Return strictly in JSON format. The response must be a JSON object with exactly these keys:
+      "title": "a catchy click-worthy title for the campaign",
+      "description": "an SEO social media description with tags",
+      "tags": "hashtags matching the niche",
+      "visualStyle": "one of: Cinematic Photo, Dark Sci-Fi / Fantasy, Cyberpunk, Retro Anime, Steampunk Oil Painting, Storybook Sketch Art, Cosmic Synthwave / Hologram, Traditional Ink Wash (Sumi-e), Claymation / Stop-Motion, Comic Book Noir",
+      "voice": "one of: en-US-GuyNeural, en-US-EmmaNeural, en-GB-SoniaNeural, de-DE-FlorianMultilingualNeural, fr-FR-HenriNeural, es-ES-AlvaroNeural, ja-JP-KeitaNeural, pt-BR-AntonioNeural, hi-IN-MadhurNeural",
+      "duration": integer duration in seconds,
+      "aspectRatio": "{aspect_ratio}",
+      "captionPreset": "one of: mrbeast, minimalist, cyberpunk, hormozi, tiktok",
+      "thumbnail_prompt": "detailed cinematic prompt for generating a promotional thumbnail overlay",
+      "thumbnail_text": "short punchy 3 word CTA overlay (e.g. 'BUY NOW!')",
+      "segments": [
+         {{
+           "text_to_speak": "the spoken narration copy for this slide (conversational, high energy, simple English)",
+           "visual_prompt": "A detailed visual description for this slide. Describe the background studio environment or model details clearly so we can generate it."
+         }},
+         {{
+           "text_to_speak": "narration copy for slide 2",
+           "visual_prompt": "A detailed lifestyle background prompt for this slide."
+         }},
+         {{
+           "text_to_speak": "closing call to action narration",
+           "visual_prompt": "A detailed background prompt for the CTA closing slide."
+         }}
+      ]
+    """
+    
+    max_retries = 3
+    response = None
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            break
+        except Exception as e:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(10)
+            else:
+                raise e
+                
+    try:
+        data = json.loads(response.text)
+        return data
+    except Exception as e:
+        print(f"Error parsing Gemini response: {e}")
+        raise e
+
 async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "Auto", caption_preset: str = "Auto") -> dict:
     """
     Sends the user's thought to Gemini to generate a script and YouTube SEO metadata.
@@ -497,6 +575,83 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
     except Exception as e:
         print(f"Warning converting fallback image: {e}")
         return output_path
+
+
+def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell") -> str:
+    """
+    Uses local rembg library to remove the background of the product photo,
+    converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate
+    to place the product in the requested prompt setting.
+    """
+    import base64
+    from rembg import remove
+    
+    token = os.getenv("REPLICATE_API_TOKEN")
+    if not token or "your_" in token.lower() or not raw_image_path or not os.path.exists(raw_image_path):
+        print("Replicate token or product image missing. Falling back to standard generation...")
+        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model)
+        
+    try:
+        # 1. Remove background locally
+        print(f"Isolating product from background for {raw_image_path}...")
+        input_img = Image.open(raw_image_path)
+        transparent_img = remove(input_img)
+        
+        # Save transparent PNG to a temp path
+        temp_png_path = output_path.replace(".webp", "_temp.png").replace(".jpg", "_temp.png")
+        transparent_img.save(temp_png_path, "PNG")
+        
+        # Read PNG and encode to Base64 Data URI
+        with open(temp_png_path, "rb") as f_png:
+            b64_data = base64.b64encode(f_png.read()).decode("utf-8")
+        data_uri = f"data:image/png;base64,{b64_data}"
+        
+        # Cleanup temp file
+        if os.path.exists(temp_png_path):
+            os.remove(temp_png_path)
+            
+        # 2. Run FLUX Inpainting Fill on Replicate
+        print(f"Running FLUX Fill on Replicate to place product in lifestyle scene: {prompt[:60]}...")
+        model_name = "black-forest-labs/flux-fill-pro"
+        output = replicate.run(
+            model_name,
+            input={
+                "image": data_uri,
+                "prompt": prompt,
+                "aspect_ratio": aspect_ratio,
+                "output_format": "webp",
+                "output_quality": 90,
+                "guidance": 30.0,
+                "steps": 40
+            }
+        )
+        
+        if not output or len(output) == 0:
+            raise RuntimeError("Replicate FLUX Fill returned no outputs.")
+            
+        # Download output
+        image_url = output[0]
+        url_str = image_url.url if hasattr(image_url, "url") else str(image_url)
+        response = httpx.get(url_str, timeout=30.0)
+        if response.status_code != 200:
+            raise RuntimeError("Failed downloading filled image.")
+            
+        with open(output_path, "wb") as f_out:
+            f_out.write(response.content)
+            
+        with Image.open(output_path) as img:
+            jpg_path = os.path.splitext(output_path)[0] + ".jpg"
+            img.convert("RGB").save(jpg_path, "JPEG")
+            if output_path != jpg_path:
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+            return jpg_path
+            
+    except Exception as e:
+        print(f"Product background replacement failed ({e}). Falling back to text-to-image...")
+        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model)
 
 def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = "16:9", image_model: str = "schnell") -> str:
     """

@@ -27,16 +27,22 @@ os.makedirs("templates", exist_ok=True)
 # Mount outputs for static file serving
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 templates = Jinja2Templates(directory="templates")
 
 class ScriptRequest(BaseModel):
-    thought: str
-    duration: int = 60
+    niche: str
+    product_title: str
+    brand: str = ""
+    price: str = ""
+    cta: str = ""
+    image_path: str = ""
+    duration: int = 30
     visual_style: str = "Auto"
     imageModel: str = "schnell"
     voice: str = "Auto"
-    aspectRatio: str = "Auto"
+    aspectRatio: str = "9:16"
     captionPreset: str = "Auto"
 
 class Segment(BaseModel):
@@ -237,6 +243,16 @@ async def api_delete_project(projectId: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
 
+
+@app.post("/api/upload-product-image")
+async def api_upload_product_image(file: UploadFile = File(...)):
+    os.makedirs("uploads", exist_ok=True)
+    import shutil
+    filePath = f"uploads/{int(time.time())}_{file.filename}"
+    with open(filePath, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    return {"filePath": filePath}
+
 @app.post("/api/generate-script")
 async def api_generate_script(req: ScriptRequest):
     """
@@ -245,8 +261,12 @@ async def api_generate_script(req: ScriptRequest):
     if not os.getenv("GEMINI_API_KEY"):
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured in .env")
     try:
-        data = await generator.generate_script(
-            req.thought, 
+        data = await generator.generate_product_campaign(
+            niche=req.niche,
+            product_title=req.product_title,
+            brand=req.brand,
+            price=req.price,
+            cta=req.cta,
             duration_seconds=req.duration, 
             visual_style=req.visual_style,
             voice=req.voice,
@@ -267,10 +287,15 @@ async def api_generate_script(req: ScriptRequest):
             "thumbnail_text": data.get("thumbnail_text", ""),
             "timestamp": int(time.time()),
             "status": "script_generated",
-            "aspectRatio": data.get("aspectRatio", "16:9"),
+            "aspectRatio": data.get("aspectRatio", "9:16"),
             "videoUrl": "",
-            "thought": req.thought,
-            "duration": data.get("duration", req.duration if req.duration > 0 else 60),
+            "niche": req.niche,
+            "productTitle": req.product_title,
+            "brand": req.brand,
+            "price": req.price,
+            "cta": req.cta,
+            "rawProductImage": req.image_path,
+            "duration": data.get("duration", req.duration if req.duration > 0 else 30),
             "visualStyle": data.get("visualStyle", req.visual_style),
             "imageModel": req.imageModel,
             "voice": data.get("voice", req.voice),
@@ -378,14 +403,17 @@ async def api_generate_assets(req: AssetRequest):
             async with image_semaphore:
                 # Add a 10.0 second pause between generations to stay within Replicate's 6/min rate limit
                 await asyncio.sleep(10.0)
-                if req.imageModel == "video":
-                    # Generate a cheap, fast static image preview first!
+                raw_img = meta.get("rawProductImage", "")
+                img_model_to_use = "schnell" if req.imageModel == "video" else req.imageModel
+                
+                if raw_img:
                     return await asyncio.to_thread(
-                        generator.generate_image_replicate, 
+                        generator.generate_product_image_replicate, 
                         seg.visual_prompt, 
+                        raw_img,
                         image_path_raw,
                         req.aspectRatio,
-                        "schnell"
+                        img_model_to_use
                     )
                 else:
                     return await asyncio.to_thread(
@@ -393,7 +421,7 @@ async def api_generate_assets(req: AssetRequest):
                         seg.visual_prompt, 
                         image_path_raw,
                         req.aspectRatio,
-                        req.imageModel
+                        img_model_to_use
                     )
         
         # Run concurrently
@@ -474,14 +502,16 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
         # 2. Regenerate visual asset if requested
         if req.regenerateImage:
             async def run_image():
-                if req.imageModel == "video":
-                    # Generate a cheap, fast static image preview first!
+                raw_img = meta.get("rawProductImage", "")
+                img_model_to_use = "schnell" if req.imageModel == "video" else req.imageModel
+                if raw_img:
                     return await asyncio.to_thread(
-                        generator.generate_image_replicate,
+                        generator.generate_product_image_replicate,
                         req.visualPrompt,
+                        raw_img,
                         image_path_raw,
                         req.aspectRatio,
-                        "schnell"
+                        img_model_to_use
                     )
                 else:
                     return await asyncio.to_thread(
@@ -489,7 +519,7 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
                         req.visualPrompt,
                         image_path_raw,
                         req.aspectRatio,
-                        req.imageModel
+                        img_model_to_use
                     )
             tasks.append(run_image())
         else:
