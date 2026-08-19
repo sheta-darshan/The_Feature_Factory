@@ -1,4 +1,4 @@
-# ImagineIf Factory 🎬
+# TheFeatureFactory Factory 🎬
 
 An end-to-end AI agent pipeline that automates the generation of speculative, high-retention YouTube Shorts and videos from a single text concept.
 
@@ -57,8 +57,8 @@ Ensure you have **Python 3.10+** installed. You will also need active API keys f
 ### 2. Installation
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/sheta-darshan/ImagineIf-Factory.git
-    cd ImagineIf-Factory
+    git clone https://github.com/sheta-darshan/TheFeatureFactory-Factory.git
+    cd TheFeatureFactory-Factory
     ```
 2.  Create and activate a virtual environment:
     ```bash

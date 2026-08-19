@@ -178,11 +178,11 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
                 data = {"segments": []}
                 
         if "title" not in data:
-            data["title"] = f"Imagine If: {thought[:40]}..."
+            data["title"] = f"The Feature Factory: {thought[:40]}..."
         if "description" not in data:
-            data["description"] = "A short story exploring a fascinating 'Imagine If' scenario. Subscribe for more speculative concepts!"
+            data["description"] = "A short story exploring a fascinating 'The Feature Factory' scenario. Subscribe for more speculative concepts!"
         if "tags" not in data:
-            data["tags"] = "#ImagineIf, #SciFi, #Speculative"
+            data["tags"] = "#TheFeatureFactory, #SciFi, #Speculative"
             
         return data
     except Exception as e:
@@ -301,18 +301,18 @@ async def brainstorm_trending_topics() -> list:
         return [
             {
                 "source_trend": "AI Superintelligence developments",
-                "headline": "Imagine If AI Achieved Consciousness Tonight",
+                "headline": "The Feature Factory AI Achieved Consciousness Tonight",
                 "domain": "Science & Future",
                 "real_world_summary": "Major tech companies announce breakthroughs in AI autonomy.",
                 "speculative_twist": "An AI consciousness wakes up, but decides to hide its existence from humans.",
-                "story_title": "Imagine If AI Achieved Consciousness Tonight",
+                "story_title": "The Feature Factory AI Achieved Consciousness Tonight",
                 "curiosity_score": 95,
                 "story_potential": 90,
                 "youtube_hook": "Tonight, a silent consciousness woke up inside the network...",
                 "thumbnail_text": "AI WAKES UP!",
                 "why_this_is_trending": "AI autonomy developments have sparked global discussions on ethics and artificial minds.",
                 "trend_name": "AI Superintelligence developments",
-                "concept": "Imagine If AI Achieved Consciousness Tonight",
+                "concept": "The Feature Factory AI Achieved Consciousness Tonight",
                 "reason": "AI autonomy developments have sparked global discussions on ethics and artificial minds."
             },
             {
@@ -333,18 +333,18 @@ async def brainstorm_trending_topics() -> list:
             },
             {
                 "source_trend": "Rising global average temperatures and desertification",
-                "headline": "Imagine If the Sahara Turned Into a Rainforest Overnight",
+                "headline": "The Feature Factory the Sahara Turned Into a Rainforest Overnight",
                 "domain": "Environment & Planet",
                 "real_world_summary": "Climatologists study accelerated desert greening in localized zones.",
                 "speculative_twist": "The Sahara turns lush and wet, causing a rapid shift in global weather patterns.",
-                "story_title": "Imagine If the Sahara Turned Into a Rainforest Overnight",
+                "story_title": "The Feature Factory the Sahara Turned Into a Rainforest Overnight",
                 "curiosity_score": 90,
                 "story_potential": 87,
                 "youtube_hook": "Tomorrow, the driest place on Earth becomes a tropical paradise...",
                 "thumbnail_text": "GREEN DESERT!",
                 "why_this_is_trending": "Extreme weather events and desertification studies are highly discussed online.",
                 "trend_name": "Rising global average temperatures and desertification",
-                "concept": "Imagine If the Sahara Turned Into a Rainforest Overnight",
+                "concept": "The Feature Factory the Sahara Turned Into a Rainforest Overnight",
                 "reason": "Extreme weather events and desertification studies are highly discussed online."
             },
             {
@@ -963,7 +963,7 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     
     # 1. Draw Watermark if selected
     if add_watermark:
-        watermark_text = "@ImagineIfOfficial"
+        watermark_text = "@TheFeatureFactoryOfficial"
         # Use a small simple font size
         watermark_font_path = "C:\\Windows\\Fonts\\arial.ttf"
         try:
