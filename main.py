@@ -795,3 +795,99 @@ async def api_youtube_check_auth():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8001, reload=True)
+
+
+@app.get("/api/download-campaign-bundle/{project_id}")
+async def download_campaign_bundle(project_id: str):
+    """
+    Bundles all project marketing assets (Final Video, Cover Thumbnail, 
+    HD Still Lifestyle Photos, and Formatted Social Captions) into a single 
+    client-ready ZIP file.
+    """
+    import zipfile
+    import io
+    
+    project_dir = f"outputs/{project_id}"
+    if not os.path.exists(project_dir):
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    meta_path = os.path.join(project_dir, "metadata.json")
+    meta = {}
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            pass
+
+    brand = meta.get("brand", "").replace(" ", "_") or "Brand"
+    product_title = meta.get("productTitle", "").replace(" ", "_") or "Product"
+    zip_filename = f"{brand}_{product_title}_Campaign_Kit.zip"
+    zip_path = os.path.join(project_dir, zip_filename)
+    
+    # Create the zip archive
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+        # 1. Add final compiled video
+        video_path = os.path.join(project_dir, "final_video.mp4")
+        if os.path.exists(video_path):
+            zipf.write(video_path, arcname="01_Ad_Video_9x16.mp4")
+            
+        # 2. Add thumbnail
+        thumb_path = os.path.join(project_dir, "thumbnail.jpg")
+        if os.path.exists(thumb_path):
+            zipf.write(thumb_path, arcname="02_Cover_Thumbnail.jpg")
+            
+        # 3. Add generated slide images
+        for i in range(10):
+            img_path = os.path.join(project_dir, f"image_{i}.jpg")
+            if os.path.exists(img_path):
+                zipf.write(img_path, arcname=f"03_Still_Image_Slide_{i+1}.jpg")
+            img_png = os.path.join(project_dir, f"image_{i}.png")
+            if os.path.exists(img_png):
+                zipf.write(img_png, arcname=f"03_Still_Image_Slide_{i+1}.png")
+                
+        # 4. Generate and add formatted social_captions.txt
+        captions_content = f"""=====================================================
+🏭 THE FEATURE FACTORY - SOCIAL MEDIA MARKETING KIT
+=====================================================
+
+Product: {meta.get('productTitle', '')}
+Brand: {meta.get('brand', '')}
+Price / Offer: {meta.get('price', '')} | CTA: {meta.get('cta', '')}
+Category: {meta.get('niche', '')}
+Campaign Title: {meta.get('title', '')}
+
+-----------------------------------------------------
+📊 DYNAMIC A/B HOOK OPTIONS (Test on your reels):
+-----------------------------------------------------
+"""
+        for idx, hook in enumerate(meta.get("alternativeHooks", [])):
+            captions_content += f"Hook {idx+1}: \"{hook}\"\n"
+            
+        captions_content += f"""
+-----------------------------------------------------
+📸 INSTAGRAM REEL COPY & HASHTAGS:
+-----------------------------------------------------
+{meta.get('instagramCaption', meta.get('description', ''))}
+
+-----------------------------------------------------
+🎥 YOUTUBE SHORTS METADATA:
+-----------------------------------------------------
+TITLE:
+{meta.get('shortsTitle', meta.get('title', ''))}
+
+DESCRIPTION:
+{meta.get('shortsDescription', meta.get('description', ''))}
+
+-----------------------------------------------------
+💬 WHATSAPP STATUS / CHAT TEXT:
+-----------------------------------------------------
+{meta.get('whatsappStatusText', '')}
+
+=====================================================
+Generated with The Feature Factory AI Product Content Studio
+=====================================================
+"""
+        zipf.writestr("04_Social_Media_Captions.txt", captions_content)
+        
+    return FileResponse(zip_path, media_type="application/zip", filename=zip_filename)

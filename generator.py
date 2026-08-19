@@ -62,7 +62,7 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
       "whatsapp_status_text": "An ultra-concise, conversational WhatsApp Status text (max 200 characters) ending with a direct chat reply call to action (e.g. 'Reply to order!')",
       "tags": "hashtags matching the niche",
       "visualStyle": "one of: High-End Fashion Editorial, Luxury Studio Showcase, Minimalist Scandinavian Lifestyle, Gourmet Food Editorial, Clean Commercial Photography, Bright Cinematic Lifestyle",
-      "voice": "Choose the narrator voice that matches the product niche: en-US-EmmaNeural or en-US-AndrewNeural for Clothing/Fashion (upbeat/trendy), en-US-AvaNeural or en-GB-SoniaNeural for Jewellery/Cosmetics (luxury/premium), en-US-GuyNeural for Furniture/Home Decor (relaxed/premium), en-US-BrianNeural for Restaurants (enthusiastic/friendly)",
+      "voice": "Choose the narrator voice that matches the product niche and region: en-IN-NeerjaNeural or en-IN-PrabhatNeural for Indian market campaigns / jewelry / ethnic wear (warm, professional Indian English), hi-IN-SwaraNeural or hi-IN-MadhurNeural for Hindi retail commercials, en-US-EmmaNeural or en-US-AndrewNeural for Fashion/Apparel, en-US-AvaNeural or en-GB-SoniaNeural for Luxury Jewellery/Cosmetics, en-US-GuyNeural for Furniture/Home Decor, en-US-BrianNeural for Restaurants/Cafes",
       "captionPreset": "one of: mrbeast, minimalist, hormozi, tiktok",
       "duration": integer duration in seconds,
       "aspectRatio": "{aspect_ratio}",
