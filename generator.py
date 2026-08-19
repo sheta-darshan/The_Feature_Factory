@@ -587,6 +587,12 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
     """
     import base64
     from rembg import remove
+    # Normalize aspect ratio for Replicate inputs
+    if aspect_ratio == "Auto" or not aspect_ratio:
+        aspect_ratio = "9:16"
+    elif ":" not in aspect_ratio:
+        aspect_ratio = "9:16"
+
     
     token = os.getenv("REPLICATE_API_TOKEN")
     if not token or "your_" in token.lower() or not raw_image_path or not os.path.exists(raw_image_path):
@@ -621,8 +627,7 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
                 "image": data_uri,
                 "prompt": prompt,
                 "aspect_ratio": aspect_ratio,
-                "output_format": "webp",
-                "output_quality": 90,
+                "output_format": "png",
                 "guidance": 30.0,
                 "steps": 40
             }
@@ -660,6 +665,12 @@ def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = 
     Generates an image from a prompt using Replicate (black-forest-labs/flux-schnell or flux-dev).
     Falls back to Pollinations.ai if Replicate is not configured, has no credit, or fails.
     """
+    # Normalize aspect ratio for Replicate inputs
+    if aspect_ratio == "Auto" or not aspect_ratio:
+        aspect_ratio = "9:16"
+    elif ":" not in aspect_ratio:
+        aspect_ratio = "9:16"
+
     token = os.getenv("REPLICATE_API_TOKEN")
     if not token or "your_" in token.lower():
         print("Replicate token not configured. Falling back to Pollinations.ai...")
