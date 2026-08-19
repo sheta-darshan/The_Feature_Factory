@@ -526,15 +526,45 @@
 
         <!-- STEP 1: CONCEPT INPUT -->
         <div class="glass-panel step-content active" id="step-content-1">
-            <div class="form-group">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; flex-wrap:wrap; gap:0.5rem;">
-                    <label for="thought-input" style="margin-bottom:0;">Enter your thought / story concept</label>
-                    <div style="display:flex; gap:0.5rem;">
-                        <button class="btn" style="width:auto; padding:0.4rem 0.8rem; font-size:0.8rem; background:rgba(99, 102, 241, 0.15); border:1px solid rgba(99, 102, 241, 0.25); box-shadow:none;" onclick="loadDailyTopic()" id="daily-topic-btn">📅 Surprise Me</button>
-                        <button class="btn" style="width:auto; padding:0.4rem 0.8rem; font-size:0.8rem; background:rgba(244, 63, 94, 0.15); border:1px solid rgba(244, 63, 94, 0.25); box-shadow:none; color:#fb7185;" onclick="toggleTrendingPanel()" id="trending-topic-btn">🔥 Trending Ideas</button>
+            <div style="display:flex; flex-direction:column; gap:1.25rem; margin-bottom:1.5rem;">
+                <div class="form-group">
+                    <label for="product-image-upload">Upload Product Photo</label>
+                    <input type="file" id="product-image-upload" accept="image/*" onchange="uploadProductImage(this)" style="background:rgba(255,255,255,0.02); border:1px dashed var(--border-color); padding:1rem; border-radius:8px; cursor:pointer; width:100%;">
+                    <input type="hidden" id="product-image-path" value="">
+                    <div id="product-image-preview" style="margin-top:0.75rem; max-width:150px; display:none; border-radius:8px; overflow:hidden; border:1px solid var(--border-color);">
+                        <img src="" style="width:100%; display:block;">
                     </div>
                 </div>
-                <textarea id="thought-input" placeholder="e.g. In the distant future, gravity is controlled by giant floating clockwork spheres. A lone engineer discovers one is ticking backwards, threatening to crush the city."></textarea>
+                <div class="row">
+                    <div class="form-group" style="flex:1;">
+                        <label for="product-niche">Product Category/Niche</label>
+                        <select id="product-niche" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                            <option value="Clothing/Fashion">Clothing / Fashion</option>
+                            <option value="Jewellery">Jewellery</option>
+                            <option value="Furniture/Home Decor">Furniture / Home Decor</option>
+                            <option value="Cosmetics">Cosmetics</option>
+                            <option value="Restaurants">Restaurants</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:2;">
+                        <label for="product-title">Product Name/Title</label>
+                        <input type="text" id="product-title" placeholder="e.g. Floral Summer Kurti, Diamond Promise Ring" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="form-group" style="flex:1;">
+                        <label for="product-brand">Brand Name</label>
+                        <input type="text" id="product-brand" placeholder="e.g. Zara, Giva, Fabindia" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label for="product-price">Price / Offer</label>
+                        <input type="text" id="product-price" placeholder="e.g. Rs 1,499, $49 (Optional)" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label for="product-cta">Call to Action (CTA)</label>
+                        <input type="text" id="product-cta" placeholder="e.g. Buy Now, Shop 50% Off" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                    </div>
+                </div>
             </div>
             
             <!-- Trending Topics Panel -->
@@ -1688,7 +1718,7 @@ const proj = data;
 
         async function loadDailyTopic() {
             const btn = document.getElementById("daily-topic-btn");
-            const input = document.getElementById("thought-input");
+            const input = document.getElementById("product-title");
             
             btn.disabled = true;
             const originalText = btn.innerText;
@@ -1748,8 +1778,8 @@ const proj = data;
                         `;
                         
                         div.addEventListener("click", () => {
-                            document.getElementById("thought-input").value = item.concept;
-                            document.getElementById("thought-input").focus();
+                            document.getElementById("product-title").value = item.concept;
+                            document.getElementById("product-title").focus();
                             toggleTrendingPanel();
                         });
                         
