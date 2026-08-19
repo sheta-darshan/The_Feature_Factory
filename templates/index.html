@@ -167,21 +167,29 @@
             gap: 1.5rem;
         }
 
-        input[type="number"], select {
+        input[type="text"], input[type="number"], select, textarea {
             width: 100%;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            color: var(--text-main);
-            padding: 0.8rem 1rem;
-            font-size: 1rem;
-            transition: all 0.3s ease;
+            background: rgba(15, 23, 42, 0.85) !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            border-radius: 10px !important;
+            color: #ffffff !important;
+            padding: 0.75rem 1rem !important;
+            font-size: 0.95rem !important;
+            font-family: 'Inter', sans-serif !important;
+            transition: all 0.25s ease;
+            box-sizing: border-box;
         }
 
-        input[type="number"]:focus, select:focus {
-            outline: none;
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px var(--primary-glow);
+        input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+            outline: none !important;
+            border-color: var(--primary) !important;
+            background: rgba(15, 23, 42, 0.95) !important;
+            box-shadow: 0 0 0 3px var(--primary-glow) !important;
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: #6b7280 !important;
+            opacity: 1;
         }
 
         .btn {
@@ -894,6 +902,41 @@
         let seoDescription = "";
         let seoTags = "";
 
+        
+        let instagramCaptionText = "";
+        let whatsappCaptionText = "";
+        let shortsTitleText = "";
+        let shortsDescText = "";
+
+        function switchPlatformTab(platform) {
+            const igCard = document.getElementById("platform-card-ig");
+            const waCard = document.getElementById("platform-card-wa");
+            const ytCard = document.getElementById("platform-card-yt");
+            const btnIg = document.getElementById("tab-btn-ig");
+            const btnWa = document.getElementById("tab-btn-wa");
+            const btnYt = document.getElementById("tab-btn-yt");
+
+            if (igCard) igCard.style.display = platform === 'ig' ? 'block' : 'none';
+            if (waCard) waCard.style.display = platform === 'wa' ? 'block' : 'none';
+            if (ytCard) ytCard.style.display = platform === 'yt' ? 'block' : 'none';
+
+            if (btnIg) {
+                btnIg.style.background = platform === 'ig' ? 'linear-gradient(135deg, rgba(225,48,108,0.2), rgba(245,96,64,0.2))' : 'rgba(255,255,255,0.04)';
+                btnIg.style.borderColor = platform === 'ig' ? 'rgba(225,48,108,0.5)' : 'var(--border-color)';
+                btnIg.style.color = platform === 'ig' ? '#fbcfe8' : 'var(--text-muted)';
+            }
+            if (btnWa) {
+                btnWa.style.background = platform === 'wa' ? 'linear-gradient(135deg, rgba(52,211,153,0.2), rgba(16,185,129,0.2))' : 'rgba(255,255,255,0.04)';
+                btnWa.style.borderColor = platform === 'wa' ? 'rgba(52,211,153,0.5)' : 'var(--border-color)';
+                btnWa.style.color = platform === 'wa' ? '#a7f3d0' : 'var(--text-muted)';
+            }
+            if (btnYt) {
+                btnYt.style.background = platform === 'yt' ? 'linear-gradient(135deg, rgba(248,113,113,0.2), rgba(239,68,68,0.2))' : 'rgba(255,255,255,0.04)';
+                btnYt.style.borderColor = platform === 'yt' ? 'rgba(248,113,113,0.5)' : 'var(--border-color)';
+                btnYt.style.color = platform === 'yt' ? '#fecaca' : 'var(--text-muted)';
+            }
+        }
+
         function copyToClipboard(elementId) {
             const input = document.getElementById(elementId);
             input.select();
@@ -1147,10 +1190,11 @@
             player.src = `/${proj.videoUrl}?t=${new Date().getTime()}`;
             player.load();
             
-            // Populate SEO Panel
-            document.getElementById("seo-title").value = proj.title;
-            document.getElementById("seo-desc").value = proj.description;
-            document.getElementById("seo-tags").value = proj.tags;
+            // Populate Platform Copywriter Captions
+            if (document.getElementById("seo-title")) document.getElementById("seo-title").value = proj.shortsTitle || proj.title || "";
+            if (document.getElementById("seo-desc")) document.getElementById("seo-desc").value = proj.instagramCaption || proj.description || "";
+            if (document.getElementById("seo-tags")) document.getElementById("seo-tags").value = proj.tags || "";
+            if (document.getElementById("wa-status-text")) document.getElementById("wa-status-text").value = proj.whatsappStatusText || "";
             
             playerContainer.style.display = "block";
             successBanner.style.display = "flex";
@@ -1348,10 +1392,14 @@
                     document.getElementById("preset-select").value = data.captionPreset;
                 }
                 
-                // Store YouTube SEO details
-                seoTitle = data.title;
-                seoDescription = data.description;
-                seoTags = data.tags;
+                // Store Platform Copywriter details
+                seoTitle = data.shortsTitle || data.title || "";
+                seoDescription = data.instagramCaption || data.description || "";
+                seoTags = data.tags || "";
+                instagramCaptionText = data.instagramCaption || data.description || "";
+                whatsappCaptionText = data.whatsappStatusText || "";
+                shortsTitleText = data.shortsTitle || data.title || "";
+                shortsDescText = data.shortsDescription || data.description || "";
 
                 document.getElementById("render-video-btn").style.display = "none";
                 document.getElementById("assets-status").style.display = "none";
@@ -1656,10 +1704,11 @@
                 player.src = `/${data.video_url}?t=${new Date().getTime()}`;
                 player.load();
 
-                // Populate SEO data inputs
-                document.getElementById("seo-title").value = seoTitle;
-                document.getElementById("seo-desc").value = seoDescription;
-                document.getElementById("seo-tags").value = seoTags;
+                // Populate Platform Copywriter data inputs
+                if (document.getElementById("seo-title")) document.getElementById("seo-title").value = shortsTitleText || seoTitle || "";
+                if (document.getElementById("seo-desc")) document.getElementById("seo-desc").value = instagramCaptionText || seoDescription || "";
+                if (document.getElementById("seo-tags")) document.getElementById("seo-tags").value = seoTags || "";
+                if (document.getElementById("wa-status-text")) document.getElementById("wa-status-text").value = whatsappCaptionText || "";
 
                 title.innerText = "Your Video is Ready!";
                 statusDiv.style.display = "none";
