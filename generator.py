@@ -43,18 +43,24 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
     
     You must output a visual campaign strategy containing marketing captions and precise slides breakdown for a short promotional reel (approx. {duration_seconds} seconds long).
     
+    CRITICAL COMMERCIAL COPYWRITING RULES:
+    1. Hook: Start with a fast, scroll-stopping marketing statement. (e.g. "Looking for the perfect summer outfit?", "This is the secret to a perfect skincare routine...").
+    2. Language: Speak in extremely clear, high-energy, persuasive social ad English. No complex vocabulary or sci-fi stories.
+    3. CTA: Conclude with a strong buying prompt matching the CTA field.
+    
     STORYBOARD SLIDES STRUCTURE:
     Generate exactly 3 storyboard segments/slides:
-    1. Hook Slide (0-3s): Introduce the hero product and brand in a premium, striking studio setting. Highlight the core benefit.
-    2. Lifestyle Slide (3-6s): Show a model or real-world user interacting with the product in a natural, premium lifestyle setting.
-    3. Call to Action / Closing Slide (6-8s): Show the product clearly alongside the brand name, price, and CTA text overlay.
+    1. Hook Slide (0-3s): Introduce the product and brand. Place it in a premium studio backdrop. Highlight the core value.
+    2. Lifestyle Slide (3-6s): Place the product in a realistic lifestyle scenario (e.g., worn by a model, placed on a table in a sunlit room, held by hand).
+    3. Call to Action / Closing Slide (6-8s): Present the product alongside the brand, pricing details, and a clean buying CTA overlay.
     
     Return strictly in JSON format. The response must be a JSON object with exactly these keys:
       "title": "a catchy click-worthy title for the campaign",
       "description": "an SEO social media description with tags",
       "tags": "hashtags matching the niche",
-      "visualStyle": "one of: Cinematic Photo, Dark Sci-Fi / Fantasy, Cyberpunk, Retro Anime, Steampunk Oil Painting, Storybook Sketch Art, Cosmic Synthwave / Hologram, Traditional Ink Wash (Sumi-e), Claymation / Stop-Motion, Comic Book Noir",
-      "voice": "one of: en-US-GuyNeural, en-US-EmmaNeural, en-GB-SoniaNeural, de-DE-FlorianMultilingualNeural, fr-FR-HenriNeural, es-ES-AlvaroNeural, ja-JP-KeitaNeural, pt-BR-AntonioNeural, hi-IN-MadhurNeural",
+      "visualStyle": "one of: High-End Fashion Editorial, Luxury Studio Showcase, Minimalist Scandinavian Lifestyle, Gourmet Food Editorial, Clean Commercial Photography, Bright Cinematic Lifestyle",
+      "voice": "Choose the narrator voice that matches the product niche: en-US-EmmaNeural or en-US-AndrewNeural for Clothing/Fashion (upbeat/trendy), en-US-AvaNeural or en-GB-SoniaNeural for Jewellery/Cosmetics (luxury/premium), en-US-GuyNeural for Furniture/Home Decor (relaxed/premium), en-US-BrianNeural for Restaurants (enthusiastic/friendly)",
+      "captionPreset": "one of: mrbeast, minimalist, hormozi, tiktok",
       "duration": integer duration in seconds,
       "aspectRatio": "{aspect_ratio}",
       "captionPreset": "one of: mrbeast, minimalist, cyberpunk, hormozi, tiktok",
@@ -107,16 +113,12 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
     Auto-detects and resolves optimal visual style, narrator voice, duration, layout format, and caption preset based on the topic.
     """
     style_guidelines = {
-        "Cinematic Photo": "cinematic, dramatic lighting, detailed 8k photography, realistic, depth of field",
-        "Dark Sci-Fi / Fantasy": "epic scale dark fantasy/sci-fi, moody, mysterious atmosphere, digital art, high contrast, atmospheric fog",
-        "Cyberpunk": "cyberpunk style, neon glow, futuristic technology, dark rainy city, hyper-detailed, synthwave color palette",
-        "Retro Anime": "90s retro anime style, hand-drawn aesthetic, Studio Ghibli inspired, vibrant colors, detailed cel shading",
-        "Steampunk Oil Painting": "steampunk aesthetic, textured oil painting style, visible brush strokes, brass and copper mechanisms, warm historical tones",
-        "Storybook Sketch Art": "storybook sketch art style, hand-drawn charcoal and pencil illustration, detailed sketching, cross-hatched shading, textured watercolor wash, high artistic contrast, vintage storybook aesthetic",
-        "Cosmic Synthwave / Hologram": "cosmic synthwave style, neon wireframe grids, glowing digital holographic overlays, high tech star charts, deep purple and cyan color palette",
-        "Traditional Ink Wash (Sumi-e)": "traditional Japanese sumi-e ink wash style, fluid brush strokes, serene minimalist composition, soft watercolor bleeds, elegant black and grey wash",
-        "Claymation / Stop-Motion": "tactile claymation style, hand-modeled clay figures, stop-motion plasticine textures, whimsical playful expressions, soft warm studio lighting",
-        "Comic Book Noir": "gritty comic book noir style, high contrast ink panels, dramatic shadows, bold halftone dot textures, classic dark detective illustration aesthetic"
+        "High-End Fashion Editorial": "commercial fashion catalog photo, crisp editorial lighting, high-end production value, rich textures, natural color-grading, outdoor sunbeams, sharp product focus",
+        "Luxury Studio Showcase": "luxury product portrait photography, glossy dark marble pedestal, soft focused highlights and velvet backdrops, professional studio spotlight, clean reflections, elegant styling",
+        "Minimalist Scandinavian Lifestyle": "clean scandinavian architecture background, light warm wood surfaces, bright sunlit room with indoor plants, soft realistic shadows, modern cozy home product showcase",
+        "Gourmet Food Editorial": "mouth-watering close-up food photography, high contrast lighting, steam rising, warm rich textures, rustic dining atmosphere, dynamic shadows, commercial food styling",
+        "Clean Commercial Photography": "universal commercial studio branding, minimalist soft gradient background, sharp product contours, clean softbox studio lighting, crisp catalog focus",
+        "Bright Cinematic Lifestyle": "warm cinema color-grade, handheld-camera aesthetic, shallow depth of field, natural warm golden hour light, premium social media ad style"
     }
     
     # Generate system prompt containing rules for Auto configuration mapping

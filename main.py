@@ -330,9 +330,9 @@ def get_voice_settings_for_style(visual_style: str):
     Returns optimal edge-tts rate and pitch adjustments based on the chosen visual style.
     """
     settings = {
-        "Cyberpunk": ("+6%", "+2Hz"),
-        "Dark Sci-Fi / Fantasy": ("-8%", "-5Hz"),
-        "Steampunk Oil Painting": ("-4%", "-2Hz"),
+        "High-End Fashion Editorial": ("+4%", "+0Hz"),
+        "Luxury Studio Showcase": ("-4%", "-1Hz"),
+        "Gourmet Food Editorial": ("+3%", "+0Hz"),
     }
     return settings.get(visual_style, ("+0%", "+0Hz"))
 
@@ -376,7 +376,7 @@ async def api_generate_assets(req: AssetRequest):
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            visual_style = meta.get("visualStyle", "Cinematic Photo")
+            visual_style = meta.get("visualStyle", "Clean Commercial Photography")
             resolved_voice = meta.get("voice", "en-US-GuyNeural")
         except Exception:
             pass
@@ -476,7 +476,7 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
             meta["imageModel"] = req.imageModel
-            visual_style = meta.get("visualStyle", "Cinematic Photo")
+            visual_style = meta.get("visualStyle", "Clean Commercial Photography")
             resolved_voice = meta.get("voice", "en-US-GuyNeural")
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, indent=2)
@@ -607,7 +607,7 @@ async def api_render_video(req: RenderRequest):
                 try:
                     with open(meta_path, "r", encoding="utf-8") as f:
                         meta = json.load(f)
-                    visual_style = meta.get("visualStyle", "Cinematic Photo")
+                    visual_style = meta.get("visualStyle", "Clean Commercial Photography")
                 except Exception:
                     pass
             # Map visual style to corresponding BGM
