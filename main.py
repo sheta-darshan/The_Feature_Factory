@@ -640,7 +640,7 @@ async def api_render_video(req: RenderRequest):
             req.fontName,
             req.highlightColor,
             req.captionPosition,
-            req.addWatermark,
+            req.addWatermark or bool(meta.get("brand")),
             caption_preset_to_use
         )
         

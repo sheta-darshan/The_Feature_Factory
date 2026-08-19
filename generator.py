@@ -1134,7 +1134,7 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
     return animated_clip
 
 
-def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", highlight_color_name="Yellow", position_name="Bottom", add_watermark=False, is_last_segment=False, caption_preset="default"):
+def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", highlight_color_name="Yellow", position_name="Bottom", add_watermark=False, is_last_segment=False, caption_preset="default", brand="", price="", cta=""):
     """
     Draws custom styled highlighted subtitles, watermark, and dynamic overlays based on a style preset.
     """
@@ -1144,7 +1144,7 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     
     # 1. Draw Watermark if selected
     if add_watermark:
-        watermark_text = "@TheFeatureFactoryOfficial"
+        watermark_text = f"@{brand.replace(' ', '')}" if brand else "@TheFeatureFactoryOfficial"
         # Use a small simple font size
         watermark_font_path = "C:\\Windows\\Fonts\\arial.ttf"
         try:
@@ -1484,6 +1484,23 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     
     motion_types = ["zoom_in", "zoom_out", "pan_left", "pan_right"]
     
+    # Read project metadata to pass brand/price/cta overlays
+    brand_meta = ""
+    price_meta = ""
+    cta_meta = ""
+    if segments and segments[0].get("audio_path"):
+        p_dir = os.path.dirname(segments[0].get("audio_path"))
+        p_meta = os.path.join(p_dir, "metadata.json")
+        if os.path.exists(p_meta):
+            try:
+                with open(p_meta, "r", encoding="utf-8") as fm:
+                    meta_data = json.load(fm)
+                    brand_meta = meta_data.get("brand", "")
+                    price_meta = meta_data.get("price", "")
+                    cta_meta = meta_data.get("cta", "")
+            except Exception as me:
+                print(f"Warning: Failed loading metadata overlays: {me}")
+
     for i, seg in enumerate(segments):
         img_path = seg.get("image_path")
         audio_path = seg.get("audio_path")
@@ -1569,10 +1586,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             
             # Dynamic subtitle & watermark frame processor function
             is_last = (i == len(segments) - 1)
-            def make_subtitle_filter(timings, size, font, color, pos, watermark, is_last_seg, preset):
+            def make_subtitle_filter(timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val):
                 def filter_func(get_frame, t):
                     frame = get_frame(t)
-                    return draw_text_on_frame(frame, t, timings, size, font, color, pos, watermark, is_last_seg, preset)
+                    return draw_text_on_frame(frame, t, timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val)
                 return filter_func
             
             filter_to_apply = make_subtitle_filter(
@@ -1583,7 +1600,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                 caption_position, 
                 add_watermark,
                 is_last,
-                caption_preset
+                caption_preset,
+                brand_meta,
+                price_meta,
+                cta_meta
             )
             
             if hasattr(img_clip, "transform"):
