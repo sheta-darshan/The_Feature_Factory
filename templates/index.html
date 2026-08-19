@@ -556,6 +556,14 @@
                         </select>
                     </div>
                     <div class="form-group" style="flex:1;">
+                        <label for="asset-type-select">📸 Photo Asset Type</label>
+                        <select id="asset-type-select" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
+                            <option value="standalone" selected>🛍️ Standalone Product (Jewelry, Bottle, Shoes, Decor)</option>
+                            <option value="model_worn">🧍 Model Wearing Clothes (Scene & Lighting Upgrade)</option>
+                            <option value="flat_lay">👕 Flat Lay / Hanger (AI Model Lookbook)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1;">
                         <label for="brand-tone-select">👑 Brand Tone / Aesthetic</label>
                         <select id="brand-tone-select" style="width:100%; background:rgba(0,0,0,0.2); border-color:var(--border-color); height:42px;">
                             <option value="Luxury Prestige" selected>👑 Luxury & Prestige (Craftsmanship & Heritage)</option>
@@ -1283,6 +1291,7 @@
             const image_path = document.getElementById("product-image-path").value;
             const isolate_background = document.getElementById("isolate-background").checked;
             const brand_tone = document.getElementById("brand-tone-select") ? document.getElementById("brand-tone-select").value : "Luxury Prestige";
+            const asset_type = document.getElementById("asset-type-select") ? document.getElementById("asset-type-select").value : "standalone";
             
             const duration = parseInt(document.getElementById("duration-input").value) || 30;
             const visual_style = document.getElementById("style-select").value;
@@ -1310,7 +1319,7 @@
                 const response = await fetch("/api/generate-script", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone })
+                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone, asset_type })
                 });
 
                 if (!response.ok) {

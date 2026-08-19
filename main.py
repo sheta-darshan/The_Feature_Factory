@@ -51,6 +51,7 @@ class ScriptRequest(BaseModel):
     aspectRatio: str = "9:16"
     captionPreset: str = "Auto"
     brand_tone: str = "Luxury Prestige"
+    asset_type: str = "standalone"
 
 class Segment(BaseModel):
     text_to_speak: str
@@ -331,6 +332,7 @@ async def api_generate_script(req: ScriptRequest):
             "price": req.price,
             "cta": req.cta,
             "brandTone": req.brand_tone,
+            "assetType": req.asset_type,
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
@@ -460,6 +462,20 @@ async def api_generate_assets(req: AssetRequest):
                 if raw_imgs and len(raw_imgs) > 0:
                     raw_img = raw_imgs[index] if index < len(raw_imgs) else raw_imgs[0]
                 
+                # Slide 1 Color Integrity: If asset is a real model wearing clothes, use original photo directly for Slide 1
+                asset_type = meta.get("assetType", "standalone")
+                if index == 0 and asset_type == "model_worn" and raw_img and os.path.exists(raw_img):
+                    print(f"Slide 1 Model Integrity: Copying original model photo directly for Slide 1 -> {image_path_raw}")
+                    import shutil
+                    os.makedirs(os.path.dirname(image_path_raw), exist_ok=True)
+                    try:
+                        with Image.open(raw_img) as m_img:
+                            m_img.convert("RGB").save(image_path_raw, "JPEG", quality=90)
+                        return image_path_raw
+                    except Exception:
+                        shutil.copy2(raw_img, image_path_raw)
+                        return image_path_raw
+
                 if raw_img:
                     return await asyncio.to_thread(
                         generator.generate_product_image_replicate, 
