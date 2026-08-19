@@ -33,7 +33,7 @@
         body {
             background-color: var(--bg-color);
             color: var(--text-main);
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-body);
             background-image: 
                 radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
                 radial-gradient(circle at 90% 80%, rgba(217, 70, 239, 0.12) 0%, transparent 40%);
@@ -148,7 +148,7 @@
             border-radius: 12px;
             color: var(--text-main);
             padding: 1rem;
-            font-family: 'Inter', sans-serif;
+            font-family: var(--font-body);
             font-size: 1rem;
             line-height: 1.5;
             resize: vertical;
@@ -504,23 +504,23 @@
     <main class="container">
         <!-- Hero Section -->
         <div class="hero">
-            <h1>Create Cinematic Videos Instantly</h1>
-            <p>Type your creative thought or essay, edit the AI-generated storyboard, and watch a cinematic voiceover video compile in seconds.</p>
+            <h1>AI Product Content Studio</h1>
+            <p>Generate gorgeous, high-converting video ads and product showcase reels from your raw photos in seconds.</p>
         </div>
 
         <!-- Progress Steps -->
         <div class="steps-container">
             <div class="step-indicator active" id="step-ind-1">
                 <div class="step-number">1</div>
-                <div class="step-label">Concept Input</div>
+                <div class="step-label">Product Setup</div>
             </div>
             <div class="step-indicator" id="step-ind-2">
                 <div class="step-number">2</div>
-                <div class="step-label">Storyboard Editor</div>
+                <div class="step-label">AI Ad Storyboard</div>
             </div>
             <div class="step-indicator" id="step-ind-3">
                 <div class="step-number">3</div>
-                <div class="step-label">Stitching & Render</div>
+                <div class="step-label">Ad Compile & Deliver</div>
             </div>
         </div>
 
@@ -570,10 +570,10 @@
             <!-- Trending Topics Panel -->
             <div id="trending-ideas-panel" style="display:none; background:rgba(255,255,255,0.02); border:1px solid var(--border-color); border-radius:12px; padding:1.25rem; margin-bottom:1.5rem; animation:fadeIn 0.3s ease;">
                 <h4 style="margin-top:0; font-family:'Outfit', sans-serif; font-size:1.1rem; color:var(--accent); display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                    <span>🔥 YouTube Live Trends Transformed</span>
+                    <span>🔥 🚀 Creative Hook Inspiration</span>
                     <button onclick="toggleTrendingPanel()" style="background:none; border:none; color:var(--text-muted); cursor:pointer; font-size:1.25rem;">&times;</button>
                 </h4>
-                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem; margin-top:0;">We searched YouTube's live trending feed, filtered topics fitting <b>The Feature Factory's</b> niche, and transformed them into speculative storytelling concepts:</p>
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem; margin-top:0;">Choose one of these dynamic campaign hook angles matching your product niche to spark creative copywriting ideas:</p>
                 <div id="trending-list" style="display:flex; flex-direction:column; gap:0.75rem;">
                     <!-- Items will be injected here dynamically -->
                 </div>
@@ -762,11 +762,11 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: var(--accent);"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 <div>
                     <h4 style="font-weight: 700; color: white;">Video Rendered Successfully!</h4>
-                    <p style="color: var(--text-muted); font-size: 0.9rem;">Your custom cinematic video is ready for playback and export.</p>
+                    <p style="color: var(--text-muted); font-size: 0.9rem;">Your high-converting product marketing video is ready to post.</p>
                 </div>
             </div>
 
-            <h2 style="font-family: 'Outfit', sans-serif; margin-bottom: 1.5rem; font-size: 1.8rem;" id="render-title">Assembling Final Video</h2>
+            <h2 style="font-family: 'Outfit', sans-serif; margin-bottom: 1.5rem; font-size: 1.8rem;" id="render-title">Compiling Ad Creative</h2>
             
             <div style="display: flex; gap: 2rem; flex-wrap: wrap; margin-bottom: 2rem; align-items: flex-start;">
                 <div class="video-player-container" id="video-preview-container" style="display:none; flex: 1.2; min-width: 320px; width: 100%;">
@@ -951,9 +951,9 @@
                     card.innerHTML = `
                         <div style="display:flex; justify-content:space-between; align-items:start; gap:0.5rem;">
                             <div class="project-card-title">${proj.title}</div>
-                            \${statusBadge}
+                            ${statusBadge}
                         </div>
-                        <div class="project-card-desc">\${descText}</div>
+                        <div class="project-card-desc">${descText}</div>
                             <div class="project-card-meta">
                                 <span>${dateStr}</span>
                                 <span>${proj.aspectRatio || "N/A"}</span>
@@ -991,7 +991,7 @@
                         document.getElementById("success-banner").style.display = "none";
                         document.getElementById("render-actions").style.display = "none";
                         document.getElementById("seo-panel").style.display = "none";
-                        document.getElementById("render-title").innerText = "Assembling Final Video";
+                        document.getElementById("render-title").innerText = "Compiling Ad Creative";
                     }
                 } else {
                     const err = await response.json();
@@ -1591,7 +1591,7 @@
                 playerContainer.style.margin = "0 0 2rem 0";
             }
 
-            title.innerText = "Assembling Final Video";
+            title.innerText = "Compiling Ad Creative";
             statusText.innerText = "Stitching audio, adding background music, and applying Ken Burns movement effects...";
             statusDiv.style.display = "flex";
             spinner.style.display = "inline-block";
