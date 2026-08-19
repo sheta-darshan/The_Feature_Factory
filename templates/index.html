@@ -764,11 +764,11 @@
 
             <!-- SEO Metadata Panel -->
             <div id="seo-panel" style="display:none; margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
-                <h3 style="font-family: 'Outfit', sans-serif; margin-bottom: 1rem; font-size: 1.3rem; color: var(--text-main);">YouTube Upload SEO Metadata</h3>
+                <h3 style="font-family: 'Outfit', sans-serif; margin-bottom: 1rem; font-size: 1.3rem; color: var(--text-main);">📢 Social Media Campaign Kit</h3>
                 
                 <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.25rem;">
-                        <label style="font-size:0.75rem; margin-bottom:0;">Video Title</label>
+                        <label style="font-size:0.75rem; margin-bottom:0;">Suggested Ad Headline / Title</label>
                         <button onclick="copyToClipboard('seo-title')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Copy</button>
                     </div>
                     <input type="text" id="seo-title" readonly style="font-family:'Inter', sans-serif; font-size:0.9rem; padding:0.6rem 0.8rem; background:rgba(0,0,0,0.25); border-color:var(--border-color);">
@@ -776,7 +776,7 @@
 
                 <div class="form-group">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.25rem;">
-                        <label style="font-size:0.75rem; margin-bottom:0;">Video Description (Chapters Auto-Calculated)</label>
+                        <label style="font-size:0.75rem; margin-bottom:0;">Copywriter Caption (Instagram/WhatsApp)</label>
                         <button onclick="copyToClipboard('seo-desc')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-size:0.75rem; font-weight:600; text-transform:uppercase;">Copy</button>
                     </div>
                     <textarea id="seo-desc" readonly style="font-family:'Inter', sans-serif; font-size:0.85rem; min-height:120px; background:rgba(0,0,0,0.25); border-color:var(--border-color);"></textarea>
@@ -914,12 +914,16 @@
                         
                         const deleteButton = `<button class="btn" style="font-size:0.85rem; padding:0.5rem 1rem; background:rgba(239, 68, 68, 0.2); color:#f87171; border:1px solid rgba(239, 68, 68, 0.3); box-shadow:none;" onclick="deleteProject('${proj.projectId}', event)">Delete</button>`;
                         
-                        card.innerHTML = `
-                            <div style="display:flex; justify-content:space-between; align-items:start; gap:0.5rem;">
-                                <div class="project-card-title">${proj.title}</div>
-                                ${statusBadge}
-                            </div>
-                            <div class="project-card-desc">${proj.thought || proj.description}</div>
+                                            let descText = proj.thought || proj.description || "";
+                    if (proj.productTitle) {
+                        descText = `<strong>Product:</strong> ${proj.productTitle} ${proj.brand ? `(${proj.brand})` : ''} - ${proj.price || ''} [${proj.niche || ''}]`;
+                    }
+                    card.innerHTML = `
+                        <div style="display:flex; justify-content:space-between; align-items:start; gap:0.5rem;">
+                            <div class="project-card-title">${proj.title}</div>
+                            \${statusBadge}
+                        </div>
+                        <div class="project-card-desc">\${descText}</div>
                             <div class="project-card-meta">
                                 <span>${dateStr}</span>
                                 <span>${proj.aspectRatio || "N/A"}</span>
@@ -975,12 +979,30 @@
             currentProjectId = projectId;
             
             // Populate script/metadata elements back into form fields
-            document.getElementById("thought-input").value = proj.thought || "";
+            if (proj.productTitle) {
+                document.getElementById("product-niche").value = proj.niche || "Clothing/Fashion";
+                document.getElementById("product-title").value = proj.productTitle || "";
+                document.getElementById("product-brand").value = proj.brand || "";
+                document.getElementById("product-price").value = proj.price || "";
+                document.getElementById("product-cta").value = proj.cta || "";
+                document.getElementById("product-image-path").value = proj.rawProductImage || "";
+                
+                const previewDiv = document.getElementById("product-image-preview");
+                if (previewDiv) {
+                    const previewImg = previewDiv.querySelector("img");
+                    if (proj.rawProductImage) {
+                        previewDiv.style.display = "block";
+                        previewImg.src = `/\${proj.rawProductImage}`;
+                    } else {
+                        previewDiv.style.display = "none";
+                    }
+                }
+            }
             document.getElementById("duration-input").value = proj.duration || 30;
             document.getElementById("style-select").value = proj.visualStyle || "Cinematic Photo";
             document.getElementById("model-select").value = proj.imageModel || "schnell";
             document.getElementById("voice-select").value = proj.voice || "en-US-GuyNeural";
-            document.getElementById("aspect-select").value = proj.aspectRatio || "16:9";
+            document.getElementById("aspect-select").value = proj.aspectRatio || "9:16";
             
             // Populate segments
             if (proj.segments && proj.segments.length > 0) {
@@ -1070,6 +1092,35 @@
             successBanner.style.display = "flex";
             actionsRow.style.display = "flex";
             seoPanel.style.display = "block";
+            // Dynamically populate download assets
+            const downloadList = document.getElementById("download-assets-list");
+            if (downloadList) {
+                downloadList.innerHTML = "";
+                const addDownloadItem = (label, url) => {
+                    if (!url) return;
+                    const link = document.createElement("a");
+                    link.href = `/${url}`;
+                    link.download = url.split('/').pop();
+                    link.style = "display:flex; justify-content:space-between; align-items:center; color:var(--text-main); font-size:0.85rem; text-decoration:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; transition:0.2s;";
+                    link.innerHTML = `<span>${label}</span> <span style="color:var(--accent); font-weight:bold; font-size:0.8rem;">⬇️ Download</span>`;
+                    link.onmouseenter = () => link.style.background = "rgba(255,255,255,0.08)";
+                    link.onmouseleave = () => link.style.background = "rgba(255,255,255,0.03)";
+                    downloadList.appendChild(link);
+                };
+
+                addDownloadItem("🎥 Finished Social Reel (MP4)", proj.videoUrl || (typeof data !== 'undefined' ? data.video_url : ""));
+                if (proj.segments && proj.segments[0]) {
+                    addDownloadItem("📸 Enhanced Product Image (Slide 1)", proj.segments[0].image_path);
+                }
+                if (proj.segments && proj.segments[1]) {
+                    addDownloadItem("🏡 Lifestyle Model Scene (Slide 2)", proj.segments[1].image_path);
+                }
+                if (proj.segments && proj.segments[2]) {
+                    addDownloadItem("💳 Offer Creative (Slide 3)", proj.segments[2].image_path);
+                }
+                addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", proj.thumbnailUrl || `outputs/${proj.projectId}/thumbnail.jpg`);
+            }
+
             downloadBtn.href = `/${proj.videoUrl}`;
             
             // Display Thumbnail if it exists
@@ -1228,8 +1279,14 @@
             currentSegments.forEach((seg, idx) => {
                 const card = document.createElement("div");
                 card.className = "segment-card";
+                                const slideLabels = [
+                    "🌟 Slide 1: Hero Showcase",
+                    "🏡 Slide 2: Lifestyle Scene",
+                    "💳 Slide 3: Offer & CTA"
+                ];
+                const cardLabel = slideLabels[idx] || `Slide ${idx + 1}`;
                 card.innerHTML = `
-                    <div class="segment-index">${idx + 1}</div>
+                    <div class="segment-index" style="font-size: 0.85rem; font-weight: 800; color: var(--accent); text-align: center; display: flex; align-items: center; justify-content: center; height: 100%; text-transform: uppercase; writing-mode: vertical-rl; transform: rotate(180deg);">${cardLabel}</div>
                     <div class="segment-inputs">
                         <div class="form-group">
                             <label>Narration (Voiceover)</label>
@@ -1512,10 +1569,40 @@
 
                 title.innerText = "Your Video is Ready!";
                 statusDiv.style.display = "none";
+const proj = data;
                 playerContainer.style.display = "block";
                 successBanner.style.display = "flex";
                 actionsRow.style.display = "flex";
                 seoPanel.style.display = "block";
+            // Dynamically populate download assets
+            const downloadList = document.getElementById("download-assets-list");
+            if (downloadList) {
+                downloadList.innerHTML = "";
+                const addDownloadItem = (label, url) => {
+                    if (!url) return;
+                    const link = document.createElement("a");
+                    link.href = `/${url}`;
+                    link.download = url.split('/').pop();
+                    link.style = "display:flex; justify-content:space-between; align-items:center; color:var(--text-main); font-size:0.85rem; text-decoration:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; transition:0.2s;";
+                    link.innerHTML = `<span>${label}</span> <span style="color:var(--accent); font-weight:bold; font-size:0.8rem;">⬇️ Download</span>`;
+                    link.onmouseenter = () => link.style.background = "rgba(255,255,255,0.08)";
+                    link.onmouseleave = () => link.style.background = "rgba(255,255,255,0.03)";
+                    downloadList.appendChild(link);
+                };
+
+                addDownloadItem("🎥 Finished Social Reel (MP4)", proj.videoUrl || (typeof data !== 'undefined' ? data.video_url : ""));
+                if (proj.segments && proj.segments[0]) {
+                    addDownloadItem("📸 Enhanced Product Image (Slide 1)", proj.segments[0].image_path);
+                }
+                if (proj.segments && proj.segments[1]) {
+                    addDownloadItem("🏡 Lifestyle Model Scene (Slide 2)", proj.segments[1].image_path);
+                }
+                if (proj.segments && proj.segments[2]) {
+                    addDownloadItem("💳 Offer Creative (Slide 3)", proj.segments[2].image_path);
+                }
+                addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", proj.thumbnailUrl || `outputs/${proj.projectId}/thumbnail.jpg`);
+            }
+
                 downloadBtn.href = `/${data.video_url}`;
                 
                 // Display Thumbnail if generated
