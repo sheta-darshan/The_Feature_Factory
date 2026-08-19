@@ -1150,6 +1150,23 @@
                 }
                 addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", proj.thumbnailUrl || `outputs/${proj.projectId}/thumbnail.jpg`);
             }
+            // Dynamically populate A/B testing hooks
+            const hooksList = document.getElementById("ab-hooks-list");
+            if (hooksList) {
+                hooksList.innerHTML = "";
+                const altHooks = proj.alternativeHooks || [];
+                if (altHooks.length === 0) {
+                    hooksList.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; font-style:italic;">No alternate hooks generated.</div>`;
+                } else {
+                    altHooks.forEach((h, idx) => {
+                        const hCard = document.createElement("div");
+                        hCard.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.8rem;";
+                        hCard.innerHTML = `<span><strong>Hook ${idx+1}:</strong> "${h}"</span> <button onclick="navigator.clipboard.writeText('${h.replace(/'/g, "\'")}')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-weight:bold; font-size:0.75rem; padding:0; margin-left:0.5rem; text-transform:uppercase;">Copy</button>`;
+                        hooksList.appendChild(hCard);
+                    });
+                }
+            }
+
 
             downloadBtn.href = `/${proj.videoUrl}`;
             
@@ -1632,6 +1649,23 @@ const proj = data;
                 }
                 addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", proj.thumbnailUrl || `outputs/${proj.projectId}/thumbnail.jpg`);
             }
+            // Dynamically populate A/B testing hooks
+            const hooksList = document.getElementById("ab-hooks-list");
+            if (hooksList) {
+                hooksList.innerHTML = "";
+                const altHooks = proj.alternativeHooks || [];
+                if (altHooks.length === 0) {
+                    hooksList.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; font-style:italic;">No alternate hooks generated.</div>`;
+                } else {
+                    altHooks.forEach((h, idx) => {
+                        const hCard = document.createElement("div");
+                        hCard.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.8rem;";
+                        hCard.innerHTML = `<span><strong>Hook ${idx+1}:</strong> "${h}"</span> <button onclick="navigator.clipboard.writeText('${h.replace(/'/g, "\'")}')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-weight:bold; font-size:0.75rem; padding:0; margin-left:0.5rem; text-transform:uppercase;">Copy</button>`;
+                        hooksList.appendChild(hCard);
+                    });
+                }
+            }
+
 
                 downloadBtn.href = `/${data.video_url}`;
                 

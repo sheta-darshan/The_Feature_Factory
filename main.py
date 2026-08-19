@@ -300,6 +300,7 @@ async def api_generate_script(req: ScriptRequest):
             "price": req.price,
             "cta": req.cta,
             "rawProductImage": req.image_path,
+            "alternativeHooks": data.get("alternative_hooks", []),
             "duration": data.get("duration", req.duration if req.duration > 0 else 30),
             "visualStyle": data.get("visualStyle", req.visual_style),
             "imageModel": req.imageModel,
@@ -320,6 +321,7 @@ async def api_generate_script(req: ScriptRequest):
             "duration": metadata["duration"],
             "aspectRatio": metadata["aspectRatio"],
             "captionPreset": metadata.get("captionPreset", "mrbeast"),
+            "alternativeHooks": metadata.get("alternativeHooks", []),
             "segments": data.get("segments", [])
         }
     except Exception as e:

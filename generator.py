@@ -1263,9 +1263,9 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     
     # Map position to vertical height multiplier
     pos_map = {
-        "Top": 0.18,
-        "Center": 0.50,
-        "Bottom": 0.70
+        "Top": 0.20,      # Safely below top headers/checkout card
+        "Center": 0.65,   # Lower-center zone, below the product to ensure 100% visibility
+        "Bottom": 0.73    # Bottom safe zone, above mobile platform navigation overlays
     }
     y_multiplier = pos_map.get(position_name, pos_map["Bottom"])
     y_pos = target_size[1] * y_multiplier
