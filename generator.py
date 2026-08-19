@@ -1730,7 +1730,14 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         
     # Apply crossfadein to all overlapping clips (except the first one) to achieve true cross-dissolve
     for idx_clip in range(1, len(clips)):
-        clips[idx_clip] = clips[idx_clip].crossfadein(0.5)
+        try:
+            if hasattr(clips[idx_clip], "with_effects"):
+                import moviepy.video.fx as vfx
+                clips[idx_clip] = clips[idx_clip].with_effects([vfx.CrossFadeIn(0.5)])
+            elif hasattr(clips[idx_clip], "crossfadein"):
+                clips[idx_clip] = clips[idx_clip].crossfadein(0.5)
+        except Exception as cf_err:
+            print(f"Warning applying crossfade effect: {cf_err}")
         
     # Use padding=-0.5 to overlap clips by 0.5s and automatically cross-dissolve them
     if len(clips) > 1:
