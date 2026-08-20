@@ -556,10 +556,25 @@
                             <input type="checkbox" id="enable-ai-video" style="width:auto; margin-bottom:0;">
                             <label for="enable-ai-video" style="margin-bottom:0; font-size:0.85rem; user-select:none; color:#a5b4fc; font-weight:500;">✨ Real AI Video Motion (Image-to-Video)</label>
                         </div>
+                        <div id="video-model-container" style="display:none; margin-top:0.25rem;">
+                            <label style="font-size:0.8rem; color:#94a3b8;">🎬 AI Video Model</label>
+                            <select id="video-model-select" style="font-size:0.8rem;">
+                                <option value="ltx-video" selected>⚡ LTX Video (Default, $0.05)</option>
+                                <option value="minimax-video-01">🎬 MiniMax Video-01 (Best Quality, $0.10)</option>
+                                <option value="kling-v1.6">🌟 Kling v1.6 (Fast AI, $0.08)</option>
+                                <option value="wan-2.1-i2v">🎥 Wan 2.1 (Budget, $0.04)</option>
+                            </select>
+                        </div>
                         <div style="display:flex; align-items:center; gap:0.5rem;">
                             <input type="checkbox" id="mute-audio-toggle" style="width:auto; margin-bottom:0;">
                             <label for="mute-audio-toggle" style="margin-bottom:0; font-size:0.85rem; user-select:none; color:#f87171; font-weight:500;">🔇 Mute Audio (No Voiceover & No Music)</label>
                         </div>
+                        <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🎙️ TTS Voice Provider</label>
+                        <select id="tts-provider-select" style="font-size:0.8rem;">
+                            <option value="edge-tts" selected>🆓 Edge TTS (Free, Microsoft)</option>
+                            <option value="openai-tts">💎 OpenAI TTS (Premium, Natural)</option>
+                            <option value="elevenlabs">👑 ElevenLabs (Ultra-Premium, Voice Clone)</option>
+                        </select>
                     </div>
                 </div>
                 <div class="row">
@@ -2035,6 +2050,16 @@ const proj = data;
                 btn.innerHTML = originalHTML;
             }
         }
+    
+        // Show/hide video model selector based on AI Video toggle
+        const aiVideoToggle = document.getElementById('enable-ai-video');
+        const videoModelContainer = document.getElementById('video-model-container');
+        if (aiVideoToggle && videoModelContainer) {
+            aiVideoToggle.addEventListener('change', function() {
+                videoModelContainer.style.display = this.checked ? 'block' : 'none';
+            });
+        }
+
     </script>
 </body>
 </html>

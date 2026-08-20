@@ -6,6 +6,8 @@ from google import genai
 from google.genai import types
 import replicate
 from dotenv import load_dotenv
+from ai_models import IMAGE_MODELS, VIDEO_MODELS
+from tts_providers import generate_voiceover_multi
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import edge_tts
@@ -741,7 +743,15 @@ def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = 
         print("Replicate token not configured. Falling back to Pollinations.ai...")
         return generate_image_pollinations(prompt, output_path, aspect_ratio)
     
-    model_name = "black-forest-labs/flux-dev" if image_model == "dev" else "black-forest-labs/flux-schnell"
+    # Multi-model registry lookup (inspired by Open-Generative-AI)
+    model_info = IMAGE_MODELS.get(image_model, IMAGE_MODELS.get("flux-schnell", {}))
+    model_name = model_info.get("model_id", "black-forest-labs/flux-schnell")
+    
+    # Legacy compatibility
+    if image_model == "dev":
+        model_name = "black-forest-labs/flux-dev"
+    elif image_model == "schnell":
+        model_name = "black-forest-labs/flux-schnell"
     
     max_retries = 4
     output = None
@@ -817,7 +827,10 @@ def generate_video_replicate(prompt: str, output_path: str, aspect_ratio: str = 
     for attempt in range(max_retries):
         try:
             # Fetch latest version of Lightricks LTX-Video model dynamically
-            model = replicate.models.get("lightricks/ltx-video")
+            # Multi-model video registry lookup (inspired by Open-Generative-AI)
+            vid_info = VIDEO_MODELS.get(video_model, VIDEO_MODELS.get("ltx-video", {}))
+            vid_model_id = vid_info.get("model_id", "lightricks/ltx-video")
+            model = replicate.models.get(vid_model_id)
             prediction = replicate.predictions.create(
                 version=model.latest_version,
                 input={
@@ -880,7 +893,7 @@ def generate_video_replicate(prompt: str, output_path: str, aspect_ratio: str = 
         print(f"Replicate video processing failed ({e}). Falling back to static image...")
         return generate_image_replicate(prompt, output_path, aspect_ratio)
 
-def animate_image_replicate(image_path: str, prompt: str, output_path: str, aspect_ratio: str = "9:16") -> str:
+def animate_image_replicate(image_path: str, prompt: str, output_path: str, aspect_ratio: str = "9:16", video_model: str = "ltx-video") -> str:
     """
     Takes a static image and animates it using lightricks/ltx-video Image-to-Video on Replicate.
     Saves the resulting .mp4 file.
@@ -902,7 +915,10 @@ def animate_image_replicate(image_path: str, prompt: str, output_path: str, aspe
     
     for attempt in range(max_retries):
         try:
-            model = replicate.models.get("lightricks/ltx-video")
+            # Multi-model video registry lookup (inspired by Open-Generative-AI)
+            vid_info = VIDEO_MODELS.get(video_model, VIDEO_MODELS.get("ltx-video", {}))
+            vid_model_id = vid_info.get("model_id", "lightricks/ltx-video")
+            model = replicate.models.get(vid_model_id)
             with open(image_path, "rb") as image_file:
                 prediction = replicate.predictions.create(
                     version=model.latest_version,

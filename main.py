@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from ai_models import get_available_models_for_frontend, estimate_cost, IMAGE_MODELS, VIDEO_MODELS, TTS_PROVIDERS
 
 # Import our generator engine
 import generator
@@ -53,6 +54,9 @@ class ScriptRequest(BaseModel):
     brand_tone: str = "Luxury Prestige"
     asset_type: str = "standalone"
     enable_ai_video: bool = False
+    videoModel: str = "ltx-video"
+    ttsProvider: str = "edge-tts"
+    ttsVoice: str = "Auto"
 
 class Segment(BaseModel):
     text_to_speak: str
@@ -910,3 +914,22 @@ Generated with The Feature Factory AI Product Content Studio
         zipf.writestr("04_Social_Media_Captions.txt", captions_content)
         
     return FileResponse(zip_path, media_type="application/zip", filename=zip_filename)
+
+
+@app.get("/api/models")
+async def api_get_models():
+    """Returns available AI models for frontend dropdowns."""
+    return get_available_models_for_frontend()
+
+
+@app.post("/api/estimate-cost")
+async def api_estimate_cost(req: dict):
+    """Returns estimated API cost before generation — inspired by OpenReels' cost transparency."""
+    return estimate_cost(
+        image_model=req.get("imageModel", "flux-schnell"),
+        video_model=req.get("videoModel") if req.get("enableAiVideo") else None,
+        tts_provider=req.get("ttsProvider", "edge-tts"),
+        num_slides=req.get("numSlides", 3),
+        char_count=req.get("charCount", 300),
+    )
+
