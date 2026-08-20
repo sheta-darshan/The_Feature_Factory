@@ -70,6 +70,7 @@ class AssetRequest(BaseModel):
     aspectRatio: str = "16:9"
     imageModel: str = "schnell"
     voice: str = "en-US-GuyNeural"
+    ttsProvider: str = "edge-tts"
 
 class RenderRequest(BaseModel):
     projectId: str
@@ -81,6 +82,7 @@ class RenderRequest(BaseModel):
     captionPosition: str = "Bottom"
     addWatermark: bool = False
     captionPreset: str = "default"
+    noSound: bool = False
 
 class TranslateProjectRequest(BaseModel):
     projectId: str
@@ -678,6 +680,16 @@ async def api_render_video(req: RenderRequest):
     if caption_preset_to_use == "Auto" or not caption_preset_to_use:
         caption_preset_to_use = "default"
         
+    # Bug #10 Fix: Initialize meta dict before usage
+    meta = {}
+    meta_path_init = f"{project_dir}/metadata.json"
+    if os.path.exists(meta_path_init):
+        try:
+            with open(meta_path_init, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception:
+            pass
+    
     bg_music_path = None
     if req.musicTrack:
         if req.musicTrack in ["Auto-Select", "auto", "Auto"]:
@@ -717,12 +729,17 @@ async def api_render_video(req: RenderRequest):
             processed_segments,
             output_video_path,
             aspect_ratio_to_use,
-            bg_music_path,
+            bg_music_path if not req.noSound else None,
             req.fontName,
             req.highlightColor,
             req.captionPosition,
             req.addWatermark or bool(meta.get("brand")),
-            caption_preset_to_use
+            caption_preset_to_use,
+            req.noSound,
+            meta.get("brand", ""),
+            meta.get("price", ""),
+            meta.get("cta", ""),
+            meta.get("niche", "")
         )
         
         # Update project metadata and generate thumbnail
@@ -815,9 +832,7 @@ async def api_youtube_check_auth():
         "authenticated": token_exists
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8001, reload=True)
+
 
 
 @app.get("/api/download-campaign-bundle/{project_id}")
@@ -933,3 +948,6 @@ async def api_estimate_cost(req: dict):
         char_count=req.get("charCount", 300),
     )
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="127.0.0.1", port=8001, reload=True)

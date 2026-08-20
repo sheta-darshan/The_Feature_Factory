@@ -1210,6 +1210,10 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     pil_img = Image.fromarray(frame)
     draw = ImageDraw.Draw(pil_img)
     
+    # 0. "None" caption preset = clean visuals, no text overlays at all
+    if caption_preset == "none":
+        return np.array(pil_img)
+    
     # 1. Draw Watermark if selected
     if add_watermark:
         watermark_text = f"@{brand.replace(' ', '')}" if brand else "@TheFeatureFactoryOfficial"
@@ -1246,35 +1250,45 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
             stroke_fill=(0, 0, 0, 100)
         )
         
-    # 2. Draw Visual CTA Badge if it's the last segment (YouTube Friendly engagement card)
-    if is_last_segment:
-        card_w, card_h = 420, 65
-        card_x = (target_size[0] - card_w) / 2
-        card_y = 90
+    # 2. Commercial Checkout Badge (replaces legacy "Share & Comment" text)
+    if is_last_segment and (brand or price or cta):
+        # Build badge text: BRAND | PRICE | CTA
+        badge_parts = []
+        if brand:
+            badge_parts.append(brand.upper())
+        if price:
+            badge_parts.append(price)
+        if cta:
+            badge_parts.append(cta)
+        badge_text = " \u2022 ".join(badge_parts) if badge_parts else ""
         
-        # Draw semi-transparent card container with rounded corners and glowing indigo border
-        draw.rounded_rectangle(
-            [card_x, card_y, card_x + card_w, card_y + card_h],
-            radius=16,
-            fill=(0, 0, 0, 160),
-            outline=(99, 102, 241, 200),
-            width=2
-        )
-        
-        cta_text = "🔔 Share & Comment below!"
-        cta_font_path = "C:\\Windows\\Fonts\\arialbd.ttf"
-        try:
-            cta_font = ImageFont.truetype(cta_font_path, 26)
-        except Exception:
-            cta_font = ImageFont.load_default()
+        if badge_text:
+            badge_font_path = "C:\\Windows\\Fonts\\arialbd.ttf"
+            try:
+                badge_font = ImageFont.truetype(badge_font_path, 24 if target_size[0] < 1200 else 28)
+            except Exception:
+                badge_font = ImageFont.load_default()
             
-        txt_w = draw.textlength(cta_text, font=cta_font)
-        txt_x = card_x + (card_w - txt_w) / 2
-        txt_y = card_y + (card_h - 30) / 2
-        
-        # Text shadow and drawing
-        draw.text((txt_x + 2, txt_y + 2), cta_text, fill=(0, 0, 0, 200), font=cta_font)
-        draw.text((txt_x, txt_y), cta_text, fill=(255, 255, 255), font=cta_font)
+            txt_w = draw.textlength(badge_text, font=badge_font)
+            card_w = int(txt_w + 60)
+            card_h = 55
+            card_x = (target_size[0] - card_w) / 2
+            card_y = 80
+            
+            # Frosted glass card
+            draw.rounded_rectangle(
+                [card_x, card_y, card_x + card_w, card_y + card_h],
+                radius=14,
+                fill=(0, 0, 0, 180),
+                outline=(99, 102, 241, 220),
+                width=2
+            )
+            
+            txt_x = card_x + (card_w - txt_w) / 2
+            txt_y = card_y + (card_h - 28) / 2
+            
+            draw.text((txt_x + 1, txt_y + 1), badge_text, fill=(0, 0, 0, 200), font=badge_font)
+            draw.text((txt_x, txt_y), badge_text, fill=(255, 255, 255), font=badge_font)
         
     if not words:
         return np.array(pil_img)
@@ -1546,11 +1560,18 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         
     return np.array(pil_img)
 
-def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9", bg_music_path: str = None, font_name: str = "Arial Bold", highlight_color: str = "Yellow", caption_position: str = "Bottom", add_watermark: bool = False, caption_preset: str = "default") -> str:
+def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9", bg_music_path: str = None, font_name: str = "Arial Bold", highlight_color: str = "Yellow", caption_position: str = "Bottom", add_watermark: bool = False, caption_preset: str = "default", no_sound: bool = False, brand: str = "", price: str = "", cta: str = "", niche: str = "") -> str:
     """
     Stitches generated audio and visual assets (images or CogVideoX videos) together into a final MP4 video.
+    If no_sound=True, strips all voiceover audio and background music for a silent/music-only render.
     """
     import random
+    
+    # Bug #1 Fix: If no_sound is enabled, disable BGM
+    if no_sound:
+        bg_music_path = None
+        print("[No-Sound Mode] Voiceover and BGM disabled.")
+    
     target_size = (1920, 1080) if aspect_ratio == "16:9" else (1080, 1920)
     clips = []
     
