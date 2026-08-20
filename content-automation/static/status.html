@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Job {{ job.job_id }}</title>
+  {% if job.status in ["queued", "processing"] %}
+  <meta http-equiv="refresh" content="4">
+  {% endif %}
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 560px; margin: 60px auto; padding: 0 20px; color: #1a1a1a; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
+    .queued, .processing { background: #fff4e0; color: #a35a00; }
+    .done { background: #e2f7e6; color: #14732b; }
+    .failed { background: #fde2e2; color: #a31414; }
+    .btn { display: inline-block; margin-top: 20px; padding: 12px 20px; background: #1a1a1a; color: white; border-radius: 6px; text-decoration: none; }
+    a.nav { font-size: 13px; color: #666; }
+    .error { background: #fde2e2; padding: 12px; border-radius: 6px; margin-top: 16px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <a class="nav" href="/jobs">&larr; All jobs</a>
+  <h1>{{ job.business_name }}</h1>
+  <p><span class="badge {{ job.status }}">{{ job.status }}</span> &nbsp; {{ job.step }}</p>
+
+  {% if job.status == "done" %}
+    <a class="btn" href="/download/{{ job.job_id }}">Download delivery.zip</a>
+  {% elif job.status == "failed" %}
+    <div class="error">{{ job.error }}</div>
+  {% else %}
+    <p>This page refreshes automatically while the job runs.</p>
+  {% endif %}
+</body>
+</html>

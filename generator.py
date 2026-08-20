@@ -61,7 +61,7 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
       "shorts_description": "A YouTube Shorts description optimized for search traffic containing #shorts and #youtubeshorts",
       "whatsapp_status_text": "An ultra-concise, conversational WhatsApp Status text (max 200 characters) ending with a direct chat reply call to action (e.g. 'Reply to order!')",
       "tags": "hashtags matching the niche",
-      "visualStyle": "one of: High-End Fashion Editorial, Luxury Studio Showcase, Minimalist Scandinavian Lifestyle, Gourmet Food Editorial, Clean Commercial Photography, Bright Cinematic Lifestyle",
+      "visualStyle": "one of: 👑 Luxury Studio Showcase, 🪔 Festive & Wedding Celebration, ☀️ Summer / Fresh Season Drop, ⚡ Flash Sale & Limited Drop, 👗 High-End Fashion Editorial, 🌿 Minimalist Scandinavian Lifestyle, ☕ Gourmet Food Editorial, 📸 Clean Commercial Photography",
       "voice": "Choose the narrator voice that matches the product niche and region: en-IN-NeerjaNeural or en-IN-PrabhatNeural for Indian market campaigns / jewelry / ethnic wear (warm, professional Indian English), hi-IN-SwaraNeural or hi-IN-MadhurNeural for Hindi retail commercials, en-US-EmmaNeural or en-US-AndrewNeural for Fashion/Apparel, en-US-AvaNeural or en-GB-SoniaNeural for Luxury Jewellery/Cosmetics, en-US-GuyNeural for Furniture/Home Decor, en-US-BrianNeural for Restaurants/Cafes",
       "captionPreset": "one of: mrbeast, minimalist, hormozi, tiktok",
       "duration": integer duration in seconds,
@@ -583,13 +583,21 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
 
 
 
-def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail") -> str:
+def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
     Enriches basic product inpainting prompts with professional studio optics,
-    lighting physics, lens profiles, and surface interaction details.
+    festive seasonal lighting, lens profiles, and surface interaction details.
     """
+    style_lower = (visual_style or "").lower()
     niche_lower = (niche or "").lower()
-    if "jewel" in niche_lower:
+
+    if "festive" in style_lower or "wedding" in style_lower or "diwali" in style_lower or "eid" in style_lower:
+        lighting_tokens = "Warm glowing candle and diya reflections, rich gold and crimson accents, elegant festive fairy lights bokeh, celebratory luxury ambiance, 8k commercial photography"
+    elif "summer" in style_lower or "fresh" in style_lower:
+        lighting_tokens = "Sun-drenched natural outdoor lighting, warm golden-hour rim light, breezy organic atmosphere, bright vibrant aesthetic, 35mm film look"
+    elif "flash" in style_lower or "sale" in style_lower:
+        lighting_tokens = "High-contrast bold commercial studio lighting, crisp directional shadows, electric vibrant accents, eye-catching advertising presentation"
+    elif "jewel" in niche_lower or "luxury" in style_lower:
         lighting_tokens = "8k macro commercial photography, Hasselblad 100mm f/1.8 lens, directional spotlight with sharp caustic refractions and gentle velvet shadow falloff, pristine reflection, subtle diamond light flare, hyper-clean luxury showcase"
     elif "fashion" in niche_lower or "clothing" in niche_lower:
         lighting_tokens = "Vogue editorial commercial photography, 35mm film grain, warm golden-hour rim lighting, organic textile weave texture, gentle ambient shadow, high-end lookbook set"
@@ -603,8 +611,7 @@ def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail") -> s
         lighting_tokens = "Award-winning commercial product photography, professional 3-point studio lighting, subtle surface reflection, sharp depth of field, crisp 8k details"
 
     return f"{raw_prompt}, {lighting_tokens}"
-
-def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True, niche: str = "General Retail") -> str:
+def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
     Uses local rembg library to remove the background of the product photo,
     converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate.
@@ -1847,3 +1854,42 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         c.close()
         
     return output_path
+
+
+def animate_lifestyle_clip_replicate(image_path: str, output_video_path: str, prompt: str = "Gentle subtle camera motion, high-end commercial ad") -> str:
+    """
+    Uses Replicate Image-to-Video models (e.g. Minimax / Luma / Kling) to generate
+    real physical generative motion from a lifestyle still image.
+    """
+    if not REPLICATE_API_TOKEN:
+        print("REPLICATE_API_TOKEN not configured for video animation. Falling back to Ken Burns.")
+        return ""
+
+    print(f"Generating Real AI Video Motion via Replicate: {prompt[:60]}...")
+    try:
+        with open(image_path, "rb") as img_file:
+            # Using minimax/video-01 image-to-video model on Replicate
+            output = replicate.run(
+                "minimax/video-01",
+                input={
+                    "first_frame_image": img_file,
+                    "prompt": f"{prompt}, slow smooth cinematic camera drift, professional lighting, photorealistic 4k commercial",
+                    "prompt_optimizer": True
+                }
+            )
+        
+        # Download generated video
+        if output:
+            video_url = str(output)
+            print(f"AI Video generated successfully: {video_url}")
+            import httpx
+            with httpx.Client(timeout=120) as client:
+                r = client.get(video_url)
+                if r.status_code == 200:
+                    with open(output_video_path, "wb") as f:
+                        f.write(r.content)
+                    return output_video_path
+        return ""
+    except Exception as e:
+        print(f"Warning: AI Video Generation fallback to Ken Burns: {e}")
+        return ""

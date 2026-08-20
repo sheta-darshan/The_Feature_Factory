@@ -52,6 +52,7 @@ class ScriptRequest(BaseModel):
     captionPreset: str = "Auto"
     brand_tone: str = "Luxury Prestige"
     asset_type: str = "standalone"
+    enable_ai_video: bool = False
 
 class Segment(BaseModel):
     text_to_speak: str
@@ -333,6 +334,7 @@ async def api_generate_script(req: ScriptRequest):
             "cta": req.cta,
             "brandTone": req.brand_tone,
             "assetType": req.asset_type,
+            "enableAiVideo": req.enable_ai_video,
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
@@ -485,7 +487,8 @@ async def api_generate_assets(req: AssetRequest):
                         req.aspectRatio,
                         img_model_to_use,
                         isolate_bg,
-                        meta.get("niche", "General Retail")
+                        meta.get("niche", "General Retail"),
+                        meta.get("visualStyle", "Auto")
                     )
                 else:
                     return await asyncio.to_thread(
