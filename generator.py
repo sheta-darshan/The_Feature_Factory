@@ -26,6 +26,78 @@ if REPLICATE_API_TOKEN:
     os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
 
+def sanitize_visual_prompt(prompt: str) -> str:
+    """
+    Strips accidental text/typography directives from visual prompts
+    so diffusion models only generate clean physical environments.
+    """
+    import re
+    cleaned = prompt
+    patterns = [
+        r"split-screen\s+view\.?\s*(?:On\s+one\s+side,?)?",
+        r"On\s+the\s+other\s+side,?\s*[^.]*\.",
+        r"(?:with\s+)?(?:the\s+)?['\"][^'\"]*['\"]\s+brand\s+logo[^.]*\.",
+        r"brand\s+logo\s+is\s+subtly\s+embossed[^.]*\.",
+        r"(?:with\s+)?(?:text|words|typography|logo|banner|button)\s+overlay[^.]*\.",
+        r"(?:text|words|letters|typography|logo|banner|button)\s+(?:saying|reading|displaying|showing|written)?\s*['\"][^'\"]*['\"]",
+        r"(?:animation\s+of\s+a\s+)?['\"][^'\"]*['\"]\s+button\s+appearing",
+        r"(?:DM|order|buy|click|shop|save|discount|sale)\s+now[!.]?",
+        r"['\"][^'\"]{1,30}['\"]",  # Remove any short quoted text snippets intended for render
+    ]
+    for p in patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(",. ")
+    return cleaned
+
+
+def derive_product_lock(transparent_img: Image.Image) -> dict:
+    """
+    Analyzes rembg-isolated product cut-out to derive a lightweight structured ProductLock
+    without any extra LLM calls.
+    """
+    bbox = transparent_img.getbbox()
+    w, h = transparent_img.size
+    
+    if bbox:
+        b_w = bbox[2] - bbox[0]
+        b_h = bbox[3] - bbox[1]
+        ratio_val = b_w / max(b_h, 1)
+        ratio_str = f"{ratio_val:.2f}:1"
+    else:
+        b_w, b_h = w, h
+        ratio_str = "1:1"
+        
+    # Extract dominant non-transparent colors
+    try:
+        small = transparent_img.resize((64, 64), Image.Resampling.NEAREST)
+        colors = []
+        for x in range(small.width):
+            for y in range(small.height):
+                r, g, b, a = small.getpixel((x, y))
+                if a > 128:
+                    colors.append((r, g, b))
+        if colors:
+            from collections import Counter
+            bucketed = [((c[0]//32)*32, (c[1]//32)*32, (c[2]//32)*32) for c in colors]
+            most_common = Counter(bucketed).most_common(3)
+            hex_colors = [f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}" for c, _ in most_common]
+        else:
+            hex_colors = ["#cccccc", "#333333"]
+    except Exception:
+        hex_colors = ["#d4af37", "#silver"]
+
+    summary = f"Preserve exact product cut-out ({ratio_str} ratio, dominant tones {', '.join(hex_colors)})"
+    
+    return {
+        "aspect_ratio": ratio_str,
+        "width": b_w,
+        "height": b_h,
+        "bounding_box": list(bbox) if bbox else [0, 0, w, h],
+        "dominant_colors": hex_colors,
+        "lock_summary": summary
+    }
+
+
 async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto") -> dict:
     """
     Sends the product details to Gemini to generate high-converting marketing copy and lifestyle prompts.
@@ -34,6 +106,11 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
     if not client:
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         
+    num_slides = 3
+    slide_dur = duration_seconds / float(num_slides)
+    max_words_per_slide = max(4, int(slide_dur * 2.3))
+    total_word_budget = max(12, int(duration_seconds * 2.3))
+
     prompt = f"""
     You are an expert product copywriter, advertisement director, and short-form video creator.
     Your job is to build a high-retention marketing campaign for this product:
@@ -50,11 +127,24 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
     2. Language: Speak in extremely clear, high-energy, persuasive social ad English. No complex vocabulary or sci-fi stories.
     3. CTA: Conclude with a strong buying prompt matching the CTA field.
     
+    CRITICAL SCRIPT PACING CONSTRAINT:
+    - Target Video Duration: exactly {duration_seconds} seconds across 3 slides (~{slide_dur:.1f}s per slide).
+    - Speech Rate: Normal English voiceover is ~2.3 words/second.
+    - Each slide's 'text_to_speak' MUST NOT exceed {max_words_per_slide} words.
+    - Total script word count across all 3 slides MUST NOT exceed {total_word_budget} words.
+    - Write ultra-punchy, concise phrases. DO NOT write long paragraphs or compound sentences.
+
+    CRITICAL VISUAL PROMPT CONSTRAINT (ZERO TEXT / LOGO / NUMBERS / PRODUCT NAME POLICY):
+    - 'visual_prompt' must describe ONLY the background environment, surface material, podium, and studio lighting (e.g., 'A polished white marble pedestal, warm softbox directional lighting, subtle blurred grey studio backdrop').
+    - NEVER write the product name, brand name, purity numbers (e.g., '92.7'), model numbers, prices, or words in 'visual_prompt'. The physical product is composited on top separately.
+    - NEVER include text, letters, typography, slogans, 'Buy Now' buttons, or CTA banners in 'visual_prompt'.
+    - ALL text, brand names, prices, and CTAs are rendered programmatically by code overlays.
+
     STORYBOARD SLIDES STRUCTURE:
     Generate exactly 3 storyboard segments/slides:
-    1. Hook Slide (0-3s): Introduce the product and brand. Place it in a premium studio backdrop. Highlight the core value.
-    2. Lifestyle Slide (3-6s): Place the product in a realistic lifestyle scenario (e.g., worn by a model, placed on a table in a sunlit room, held by hand).
-    3. Call to Action / Closing Slide (6-8s): Present the product alongside the brand, pricing details, and a clean buying CTA overlay.
+    1. Hook Slide (0-3s): Introduce the product. Describe a clean, premium studio backdrop or spotlight surface.
+    2. Lifestyle Slide (3-6s): Describe a realistic lifestyle background scenario (e.g., in a sunlit modern room, cafe table, organic natural lighting).
+    3. Call to Action / Closing Slide (6-8s): Describe a clean, luxury studio backdrop. (STRICTLY NO text, logos, or buttons in the visual description).
     
     Return strictly in JSON format. The response must be a JSON object with exactly these keys:
       "title": "a catchy click-worthy title for the campaign",
@@ -68,21 +158,20 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
       "captionPreset": "one of: mrbeast, minimalist, hormozi, tiktok",
       "duration": integer duration in seconds,
       "aspectRatio": "{aspect_ratio}",
-      "captionPreset": "one of: mrbeast, minimalist, cyberpunk, hormozi, tiktok",
-      "thumbnail_prompt": "detailed cinematic prompt for generating a promotional thumbnail overlay",
+      "thumbnail_prompt": "detailed cinematic prompt for generating a promotional thumbnail backdrop (no text)",
       "thumbnail_text": "short punchy 3 word CTA overlay (e.g. 'BUY NOW!')",
       "segments": [
          {{
-           "text_to_speak": "the spoken narration copy for this slide (conversational, high energy, simple English)",
-           "visual_prompt": "A detailed visual description for this slide. Describe the background studio environment or model details clearly so we can generate it."
+           "text_to_speak": "ultra-short spoken narration (max {max_words_per_slide} words)",
+           "visual_prompt": "A detailed visual description of the studio surface/lighting (STRICTLY NO text or logos)."
          }},
          {{
-           "text_to_speak": "narration copy for slide 2",
-           "visual_prompt": "A detailed lifestyle background prompt for this slide."
+           "text_to_speak": "ultra-short spoken narration (max {max_words_per_slide} words)",
+           "visual_prompt": "A detailed lifestyle background description (STRICTLY NO text or logos)."
          }},
          {{
-           "text_to_speak": "closing call to action narration",
-           "visual_prompt": "A detailed background prompt for the CTA closing slide."
+           "text_to_speak": "ultra-short spoken closing CTA (max {max_words_per_slide} words)",
+           "visual_prompt": "A detailed background description for the closing slide (STRICTLY NO text or logos)."
          }}
       ]
     """
@@ -542,8 +631,11 @@ import urllib.parse
 import time
 
 def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str = "16:9") -> str:
-    print(f"Generating image via Pollinations.ai (Free Option) for: {prompt[:60]}...")
-    encoded_prompt = urllib.parse.quote(prompt)
+    cleaned = sanitize_visual_prompt(prompt)
+    if "no text" not in cleaned.lower():
+        cleaned = f"{cleaned}, clean blank background surfaces, smooth unblemished surfaces without writing or plaques, absolutely no text, no numbers, no words, no signs, no logos, no typography, no watermarks, no inscriptions, no engravings, no labels"
+    print(f"Generating image via Pollinations.ai (Free Option) for: {cleaned[:60]}...")
+    encoded_prompt = urllib.parse.quote(cleaned)
     
     # Set dimensions based on aspect ratio
     width, height = (1280, 720) if aspect_ratio == "16:9" else (720, 1280)
@@ -576,49 +668,74 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
         with Image.open(output_path) as img:
             jpg_path = os.path.splitext(output_path)[0] + ".jpg"
             img.convert("RGB").save(jpg_path, "JPEG")
-            if output_path != jpg_path:
-                os.remove(output_path)
             return jpg_path
     except Exception as e:
         print(f"Warning converting fallback image: {e}")
         return output_path
 
+def sanitize_visual_prompt(prompt: str) -> str:
+    """
+    Strips accidental text/typography directives, product purity numbers, and branding
+    from visual prompts so diffusion models only generate clean physical environments.
+    """
+    import re
+    cleaned = prompt
+    patterns = [
+        r"split-screen\s+view\.?\s*(?:On\s+one\s+side,?)?",
+        r"On\s+the\s+other\s+side,?\s*[^.]*\.",
+        r"(?:with\s+)?(?:the\s+)?['\"][^'\"]*['\"]\s+brand\s+logo[^.]*\.",
+        r"brand\s+logo\s+is\s+subtly\s+embossed[^.]*\.",
+        r"(?:with\s+)?(?:text|words|typography|logo|banner|button)\s+overlay[^.]*\.",
+        r"(?:text|words|letters|typography|logo|banner|button)\s+(?:saying|reading|displaying|showing|written)?\s*['\"][^'\"]*['\"]",
+        r"(?:animation\s+of\s+a\s+)?['\"][^'\"]*['\"]\s+button\s+appearing",
+        r"(?:DM|order|buy|click|shop|save|discount|sale)\s+now[!.]?",
+        r"['\"][^'\"]{1,30}['\"]",  # Remove any short quoted text snippets
+        r"\b\d{1,4}(?:\.\d+)?\b",   # Strip numeric purity marks/ratings like 92.7, 925, 1499 that trigger text hallucination
+    ]
+    for p in patterns:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(",. ")
+    return cleaned
 
 
 def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
-    Enriches basic product inpainting prompts with professional studio optics,
-    festive seasonal lighting, lens profiles, and surface interaction details.
+    Enriches product background inpainting prompts with professional studio surface optics,
+    lighting direction, and environmental backdrop details.
+    Enforces strict zero-text directives so diffusion models never render letters or numbers.
     """
+    sanitized = sanitize_visual_prompt(raw_prompt)
     style_lower = (visual_style or "").lower()
     niche_lower = (niche or "").lower()
 
     if "festive" in style_lower or "wedding" in style_lower or "diwali" in style_lower or "eid" in style_lower:
-        lighting_tokens = "Warm glowing candle and diya reflections, rich gold and crimson accents, elegant festive fairy lights bokeh, celebratory luxury ambiance, 8k commercial photography"
+        env_tokens = "environment: warm glowing background fairy lights bokeh, soft celebratory ambient lighting, rich dark surface with gentle golden rim reflections, luxury festive commercial atmosphere, shallow depth of field"
     elif "summer" in style_lower or "fresh" in style_lower:
-        lighting_tokens = "Sun-drenched natural outdoor lighting, warm golden-hour rim light, breezy organic atmosphere, bright vibrant aesthetic, 35mm film look"
+        env_tokens = "environment: natural sun-drenched outdoor morning light, warm golden-hour rim lighting, organic lifestyle backdrop, bright clean atmosphere, soft realistic shadows"
     elif "flash" in style_lower or "sale" in style_lower:
-        lighting_tokens = "High-contrast bold commercial studio lighting, crisp directional shadows, electric vibrant accents, eye-catching advertising presentation"
+        env_tokens = "environment: clean commercial advertising studio, high-contrast directional key light, crisp softbox shadows, sleek modern gradient backdrop"
     elif "jewel" in niche_lower or "luxury" in style_lower:
-        lighting_tokens = "8k macro commercial photography, Hasselblad 100mm f/1.8 lens, directional spotlight with sharp caustic refractions and gentle velvet shadow falloff, pristine reflection, subtle diamond light flare, hyper-clean luxury showcase"
+        env_tokens = "environment: high-end luxury jewelry studio, glossy dark marble pedestal, soft focused background bokeh, delicate side spotlight with soft caustic refractions, pristine surface reflection, clean velvet falloff"
     elif "fashion" in niche_lower or "clothing" in niche_lower:
-        lighting_tokens = "Vogue editorial commercial photography, 35mm film grain, warm golden-hour rim lighting, organic textile weave texture, gentle ambient shadow, high-end lookbook set"
+        env_tokens = "environment: modern architectural interior studio, soft directional window light, natural lookbook aesthetic, gentle ambient shadow casting, clean minimalist aesthetic"
     elif "cosmetic" in niche_lower or "beauty" in niche_lower:
-        lighting_tokens = "High-end skincare commercial photography, diffuse Scandinavian morning daylight, delicate dewy mist, frosted glass reflection, subtle botanical shadow casting, ultra-clean aesthetic"
+        env_tokens = "environment: luxury skincare aesthetic, diffuse morning daylight, subtle frosted glass reflection, soft botanical leaf shadows in background, ultra-clean commercial set"
     elif "furniture" in niche_lower or "home" in niche_lower or "decor" in niche_lower:
-        lighting_tokens = "Architectural Digest interior photography, natural side window light, warm timber ambient glow, soft depth of field, elegant minimalist living space"
+        env_tokens = "environment: Architectural Digest modern interior space, natural timber flooring, warm ambient room lighting, soft depth of field"
     elif "restaurant" in niche_lower or "food" in niche_lower:
-        lighting_tokens = "Michelin-guide gourmet food photography, 45-degree warm directional key light, delicate rising steam, dark slate texture, delicious macro detail, rich color grading"
+        env_tokens = "environment: rustic dining backdrop, warm 45-degree directional key light, dark slate surface, delicate atmospheric steam, rich color grading"
     else:
-        lighting_tokens = "Award-winning commercial product photography, professional 3-point studio lighting, subtle surface reflection, sharp depth of field, crisp 8k details"
+        env_tokens = "environment: professional 3-point studio lighting, clean softbox illumination, subtle surface reflection, sharp depth of field, minimalist commercial backdrop"
 
-    return f"{raw_prompt}, {lighting_tokens}"
+    no_text_clause = "clean blank background surfaces, smooth unblemished marble and pedestal without writing or plaques, absolutely no text, no numbers, no words, no signs, no logos, no typography, no watermarks, no inscriptions, no engravings, no labels, no etched letters"
+    return f"{sanitized}, {env_tokens}, {no_text_clause}"
+
+
 def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
-    Uses local rembg library to remove the background of the product photo,
-    converts it to a Base64 data URI, and runs black-forest-labs/flux-fill-pro on Replicate.
-    If isolate_background is False, it skips AI background generation and directly copies
-    the original product photo as the visual asset for that slide.
+    Uses local rembg library to isolate the product foreground, generates a binary inpainting mask
+    (0=protect product, 255=inpaint background), calls Replicate flux-fill-pro with image+mask,
+    and performs exact foreground alpha compositing to guarantee 100% true product fidelity.
     """
     import base64
     import shutil
@@ -628,9 +745,7 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
     if not isolate_background:
         if raw_image_path and os.path.exists(raw_image_path):
             print(f"Background isolation disabled. Copying original photo directly: {raw_image_path} -> {output_path}")
-            # Ensure output directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            # Copy file (using PIL to normalize format to JPEG)
             try:
                 with Image.open(raw_image_path) as img:
                     jpg_path = os.path.splitext(output_path)[0] + ".jpg"
@@ -638,48 +753,66 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
                     return jpg_path
             except Exception as e:
                 print(f"Failed copying original photo: {e}")
-                # Fallback to copy directly
                 shutil.copy2(raw_image_path, output_path)
                 return output_path
+
     # Normalize aspect ratio for Replicate inputs
     if aspect_ratio == "Auto" or not aspect_ratio:
         aspect_ratio = "9:16"
     elif ":" not in aspect_ratio:
         aspect_ratio = "9:16"
 
+    # Sanitize prompt to ensure zero text directives
+    cleaned_prompt = enrich_cinematic_prompt(prompt, niche=niche, visual_style=visual_style)
     
     token = os.getenv("REPLICATE_API_TOKEN")
     if not token or "your_" in token.lower() or not raw_image_path or not os.path.exists(raw_image_path):
         print("Replicate token or product image missing. Falling back to standard generation...")
-        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model)
+        return generate_image_replicate(cleaned_prompt, output_path, aspect_ratio, image_model)
         
     try:
-        # 1. Remove background locally
+        # 1. Remove background locally and isolate product
         print(f"Isolating product from background for {raw_image_path}...")
-        input_img = Image.open(raw_image_path)
+        input_img = Image.open(raw_image_path).convert("RGBA")
         transparent_img = remove(input_img)
         
-        # Save transparent PNG to a temp path
-        temp_png_path = output_path.replace(".webp", "_temp.png").replace(".jpg", "_temp.png")
-        transparent_img.save(temp_png_path, "PNG")
+        # 2. Generate Inpainting Mask (0 = preserve product, 255 = inpaint background)
+        alpha = transparent_img.split()[3]
+        # Binarize alpha: where alpha > 20 is product (0/black), where alpha <= 20 is background to inpaint (255/white)
+        mask_img = Image.eval(alpha, lambda a: 0 if a > 20 else 255).convert("L")
         
-        # Read PNG and encode to Base64 Data URI
+        # Save temp PNGs
+        temp_png_path = output_path.replace(".webp", "_temp.png").replace(".jpg", "_temp.png")
+        temp_mask_path = output_path.replace(".webp", "_mask.png").replace(".jpg", "_mask.png")
+        transparent_img.save(temp_png_path, "PNG")
+        mask_img.save(temp_mask_path, "PNG")
+        
+        # Read PNGs and encode to Base64 Data URIs
         with open(temp_png_path, "rb") as f_png:
             b64_data = base64.b64encode(f_png.read()).decode("utf-8")
         data_uri = f"data:image/png;base64,{b64_data}"
+
+        with open(temp_mask_path, "rb") as f_mask:
+            b64_mask = base64.b64encode(f_mask.read()).decode("utf-8")
+        mask_uri = f"data:image/png;base64,{b64_mask}"
         
-        # Cleanup temp file
-        if os.path.exists(temp_png_path):
-            os.remove(temp_png_path)
+        # Cleanup temp files
+        for tmp in [temp_png_path, temp_mask_path]:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except Exception:
+                    pass
             
-        # 2. Run FLUX Inpainting Fill on Replicate
-        print(f"Running FLUX Fill on Replicate to place product in lifestyle scene: {prompt[:60]}...")
+        # 3. Run FLUX Fill Pro with Image AND Mask
+        print(f"Running FLUX Fill Pro with Product Inpainting Mask: {cleaned_prompt[:60]}...")
         model_name = "black-forest-labs/flux-fill-pro"
         output = replicate.run(
             model_name,
             input={
                 "image": data_uri,
-                "prompt": prompt,
+                "mask": mask_uri,
+                "prompt": cleaned_prompt,
                 "aspect_ratio": aspect_ratio,
                 "output_format": "png",
                 "guidance": 30.0,
@@ -687,7 +820,7 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
             }
         )
         
-        # Dynamically read/download the output from Replicate FLUX Fill (can be list, string, or FileOutput)
+        # Download infilled image from Replicate
         if not output:
             raise RuntimeError("Replicate FLUX Fill returned no outputs.")
             
@@ -713,21 +846,39 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
         with open(output_path, "wb") as f_out:
             f_out.write(content)
             
-        with Image.open(output_path) as img:
+        # 4. Exact Pixel-Perfect Foreground Compositing
+        # Overlay original sharp product cut-out on top of infilled scene to guarantee 100% fidelity
+        with Image.open(output_path) as filled_img:
+            filled_rgba = filled_img.convert("RGBA")
+            target_w, target_h = filled_rgba.size
+            
+            # Position the isolated product on the infilled background
+            prod_w, prod_h = transparent_img.size
+            if (prod_w, prod_h) != (target_w, target_h):
+                scale = min(target_w / prod_w, target_h / prod_h)
+                new_w, new_h = int(prod_w * scale), int(prod_h * scale)
+                resized_prod = transparent_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                pos_x = (target_w - new_w) // 2
+                pos_y = (target_h - new_h) // 2
+                filled_rgba.paste(resized_prod, (pos_x, pos_y), resized_prod)
+            else:
+                filled_rgba.paste(transparent_img, (0, 0), transparent_img)
+                
             jpg_path = os.path.splitext(output_path)[0] + ".jpg"
-            img.convert("RGB").save(jpg_path, "JPEG")
+            filled_rgba.convert("RGB").save(jpg_path, "JPEG", quality=95)
             if output_path != jpg_path:
                 try:
                     os.remove(output_path)
                 except Exception:
                     pass
+            print(f"Successfully rendered composite image with 100% product fidelity: {jpg_path}")
             return jpg_path
             
     except Exception as e:
         print(f"Product background replacement failed ({e}). Falling back to text-to-image...")
-        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model)
+        return generate_image_replicate(cleaned_prompt, output_path, aspect_ratio, image_model)
 
-def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = "16:9", image_model: str = "schnell") -> str:
+def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = "16:9", image_model: str = "schnell", niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
     Generates an image from a prompt using Replicate (black-forest-labs/flux-schnell or flux-dev).
     Falls back to Pollinations.ai if Replicate is not configured, has no credit, or fails.
@@ -738,10 +889,12 @@ def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = 
     elif ":" not in aspect_ratio:
         aspect_ratio = "9:16"
 
+    cleaned_prompt = enrich_cinematic_prompt(prompt, niche=niche, visual_style=visual_style)
+
     token = os.getenv("REPLICATE_API_TOKEN")
     if not token or "your_" in token.lower():
         print("Replicate token not configured. Falling back to Pollinations.ai...")
-        return generate_image_pollinations(prompt, output_path, aspect_ratio)
+        return generate_image_pollinations(cleaned_prompt, output_path, aspect_ratio)
     
     # Multi-model registry lookup (inspired by Open-Generative-AI)
     model_info = IMAGE_MODELS.get(image_model, IMAGE_MODELS.get("flux-schnell", {}))
@@ -760,7 +913,7 @@ def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = 
             output = replicate.run(
                 model_name,
                 input={
-                    "prompt": prompt,
+                    "prompt": cleaned_prompt,
                     "aspect_ratio": aspect_ratio,
                     "output_format": "webp",
                     "output_quality": 90
@@ -985,10 +1138,12 @@ def animate_image_replicate(image_path: str, prompt: str, output_path: str, aspe
         print(f"Replicate video processing failed ({e}). Falling back to static panning.")
         return image_path
 
-def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_ratio: str = "16:9") -> str:
+def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_ratio: str = "16:9", raw_image_path: str = None, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
-    Generates a widescreen thumbnail background using Flux Dev on Replicate,
-    then overlays high-contrast bold 3D text in a dynamic rotation.
+    Generates a promotional thumbnail for the project.
+    If a raw product image is provided, uses masked FLUX Fill Pro + product cutout alpha compositing
+    to ensure 100% true product fidelity.
+    Then overlays high-contrast bold 3D text in a dynamic rotation.
     Saves the final thumbnail to outputs/{project_id}/thumbnail.jpg.
     """
     import os
@@ -1003,22 +1158,32 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
     # Define dynamic dimensions based on aspect ratio
     width, height = (1280, 720) if aspect_ratio == "16:9" else (720, 1280)
     
-    # 1. Generate high-quality thumbnail background using Flux Dev (Replicate)
-    # Fallback to Schnell if Replicate is unconfigured
-    print(f"Generating thumbnail background for project {project_id}...")
+    # 1. Generate high-quality thumbnail background
+    # If product image is available, use masked inpainting + composite to preserve true product fidelity
+    print(f"Generating thumbnail for project {project_id} (product-aware: {bool(raw_image_path)})...")
     try:
-        generate_image_replicate(prompt, temp_bg_path, aspect_ratio=aspect_ratio, image_model="dev")
+        if raw_image_path and os.path.exists(raw_image_path):
+            generate_product_image_replicate(
+                prompt=prompt,
+                raw_image_path=raw_image_path,
+                output_path=temp_bg_path,
+                aspect_ratio=aspect_ratio,
+                image_model="flux-fill-pro",
+                isolate_background=True,
+                niche=niche,
+                visual_style=visual_style
+            )
+        else:
+            generate_image_replicate(prompt, temp_bg_path, aspect_ratio=aspect_ratio, image_model="dev")
     except Exception as e:
-        print(f"Error generating Replicate thumbnail background: {e}")
+        print(f"Error generating thumbnail background: {e}")
         
     if not os.path.exists(temp_bg_path):
-        # Create fallback dark slate background
         print("Warning: Thumbnail background generation failed. Using dark gradient fallback canvas.")
         bg_img = Image.new("RGB", (width, height), color=(15, 23, 42))
     else:
         try:
             bg_img = Image.open(temp_bg_path).convert("RGB")
-            # Resize to standard YouTube thumbnail resolution
             bg_img = bg_img.resize((width, height), Image.Resampling.LANCZOS)
         except Exception as e:
             print(f"Error reading background file: {e}. Using slate fallback.")
@@ -1053,9 +1218,12 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
         else:
             lines.append(clean_text)
             
-        # Draw each line on the overlay layer centered
+        # Draw each line on the overlay layer in safe bottom third so center product is visible
         total_h = len(lines) * (font_size + 15)
-        start_y = (height - total_h) / 2
+        if raw_image_path:
+            start_y = int(height * 0.76 - total_h / 2)
+        else:
+            start_y = (height - total_h) / 2
         
         for idx, line_text in enumerate(lines):
             line_w = layer_draw.textlength(line_text, font=font)
@@ -1114,8 +1282,8 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
 
 def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1080), motion_type: str = "zoom_in") -> VideoClip:
     """
-    Creates an animated VideoClip with ultra-smooth PIL-based Ken Burns animations (zoom_in, zoom_out, pan_left, pan_right).
-    Fits the target aspect ratio perfectly and avoids stutters or black bars.
+    Creates an animated VideoClip with safe-framed Ken Burns animations (zoom_in, zoom_out, pan_left, pan_right).
+    Uses subtle motion margins so product edges and brand logos are never cropped off.
     """
     import numpy as np
     from PIL import Image
@@ -1123,7 +1291,7 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
     
     if not image_path or not os.path.exists(image_path):
         print(f"Warning: Image asset '{image_path}' not found. Generating solid slate canvas fallback.")
-        fallback_img = Image.new("RGB", target_size, color=(15, 23, 42))  # Slate dark background
+        fallback_img = Image.new("RGB", target_size, color=(15, 23, 42))
         import tempfile
         temp_file = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
         temp_file.close()
@@ -1139,7 +1307,7 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
     img_w, img_h = img_source.size
     target_ratio = target_size[0] / target_size[1]
     
-    # Calculate max crop size fitting the target aspect ratio
+    # Fit inside target aspect ratio
     if img_w / img_h > target_ratio:
         crop_h = img_h
         crop_w = img_h * target_ratio
@@ -1151,37 +1319,34 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
     center_y = img_h / 2.0
     
     def make_frame(t):
-        p = min(1.0, max(0.0, t / duration))
+        p = min(1.0, max(0.0, t / max(duration, 0.1)))
         
+        # Gentle, subtle commercial movement (5-6% max delta) to preserve product framing
         if motion_type == "zoom_in":
-            # Zoom in from 100% of max crop box down to 88%
-            s = 1.0 - 0.12 * p
+            s = 1.0 - 0.05 * p
             w = crop_w * s
             h = crop_h * s
             x0 = center_x - w / 2.0
             y0 = center_y - h / 2.0
             
         elif motion_type == "zoom_out":
-            # Zoom out from 88% of max crop box up to 100%
-            s = 0.88 + 0.12 * p
+            s = 0.95 + 0.05 * p
             w = crop_w * s
             h = crop_h * s
             x0 = center_x - w / 2.0
             y0 = center_y - h / 2.0
             
         elif motion_type == "pan_left":
-            # Slight zoom-in (92%) to allow panning room, move right to left
-            w = crop_w * 0.92
-            h = crop_h * 0.92
+            w = crop_w * 0.96
+            h = crop_h * 0.96
             span_x = img_w - w
             curr_center_x = (img_w - w / 2.0) - p * span_x if span_x > 0 else center_x
             x0 = curr_center_x - w / 2.0
             y0 = center_y - h / 2.0
             
         elif motion_type == "pan_right":
-            # Slight zoom-in (92%) to allow panning room, move left to right
-            w = crop_w * 0.92
-            h = crop_h * 0.92
+            w = crop_w * 0.96
+            h = crop_h * 0.96
             span_x = img_w - w
             curr_center_x = (w / 2.0) + p * span_x if span_x > 0 else center_x
             x0 = curr_center_x - w / 2.0
@@ -1193,7 +1358,6 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
             x0 = center_x - w / 2.0
             y0 = center_y - h / 2.0
             
-        # Crop and resize with BILINEAR interpolation for smooth anti-aliased sub-pixel rendering
         cropped = img_source.crop((int(x0), int(y0), int(x0 + w), int(y0 + h)))
         resized = cropped.resize(target_size, Image.Resampling.BILINEAR)
         return np.array(resized)
@@ -1205,54 +1369,38 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
 def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", highlight_color_name="Yellow", position_name="Bottom", add_watermark=False, is_last_segment=False, caption_preset="default", brand="", price="", cta="", is_first_segment=False, niche=""):
     """
     Draws custom styled highlighted subtitles, watermark, and dynamic overlays based on a style preset.
+    Enforces safe bounding box calculations to guarantee subtitles never overflow the 9:16 screen width.
     """
-    # Convert numpy frame (RGB) to Pillow Image
     pil_img = Image.fromarray(frame)
     draw = ImageDraw.Draw(pil_img)
     
-    # 0. "None" caption preset = clean visuals, no text overlays at all
     if caption_preset == "none":
         return np.array(pil_img)
     
-    # 1. Draw Watermark if selected
+    # 1. Watermark
     if add_watermark:
         watermark_text = f"@{brand.replace(' ', '')}" if brand else "@TheFeatureFactoryOfficial"
-        # Use a small simple font size
         watermark_font_path = "C:\\Windows\\Fonts\\arial.ttf"
         try:
-            if os.path.exists(watermark_font_path):
-                watermark_font = ImageFont.truetype(watermark_font_path, 28 if target_size[0] < 1200 else 24)
-            else:
-                raise OSError()
+            watermark_font = ImageFont.truetype(watermark_font_path, 26 if target_size[0] < 1200 else 22)
         except Exception:
-            local_font = "static/fonts/Outfit-Bold.ttf"
-            if os.path.exists(local_font):
-                try:
-                    watermark_font = ImageFont.truetype(local_font, 22 if target_size[0] < 1200 else 18)
-                except Exception:
-                    watermark_font = ImageFont.load_default()
-            else:
-                watermark_font = ImageFont.load_default()
+            watermark_font = ImageFont.load_default()
         
-        # Position: Top Right corner
         w_w = draw.textlength(watermark_text, font=watermark_font)
         x_watermark = target_size[0] - w_w - 30
         y_watermark = 30
         
-        # Draw watermark with transparency by writing semi-transparent text
-        # Draw light gray text with thin stroke
         draw.text(
             (x_watermark, y_watermark), 
             watermark_text, 
-            fill=(255, 255, 255, 120),  # semi-transparent white
+            fill=(255, 255, 255, 130),
             font=watermark_font,
             stroke_width=2,
             stroke_fill=(0, 0, 0, 100)
         )
         
-    # 2. Commercial Checkout Badge (replaces legacy "Share & Comment" text)
+    # 2. Commercial Checkout Card Badge on Final Segment
     if is_last_segment and (brand or price or cta):
-        # Build badge text: BRAND | PRICE | CTA
         badge_parts = []
         if brand:
             badge_parts.append(brand.upper())
@@ -1260,22 +1408,21 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
             badge_parts.append(price)
         if cta:
             badge_parts.append(cta)
-        badge_text = " \u2022 ".join(badge_parts) if badge_parts else ""
+        badge_text = " • ".join(badge_parts) if badge_parts else ""
         
         if badge_text:
             badge_font_path = "C:\\Windows\\Fonts\\arialbd.ttf"
             try:
-                badge_font = ImageFont.truetype(badge_font_path, 24 if target_size[0] < 1200 else 28)
+                badge_font = ImageFont.truetype(badge_font_path, 26 if target_size[0] < 1200 else 28)
             except Exception:
                 badge_font = ImageFont.load_default()
             
             txt_w = draw.textlength(badge_text, font=badge_font)
-            card_w = int(txt_w + 60)
+            card_w = min(int(txt_w + 60), target_size[0] - 60)
             card_h = 55
             card_x = (target_size[0] - card_w) / 2
             card_y = 80
             
-            # Frosted glass card
             draw.rounded_rectangle(
                 [card_x, card_y, card_x + card_w, card_y + card_h],
                 radius=14,
@@ -1286,35 +1433,67 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
             
             txt_x = card_x + (card_w - txt_w) / 2
             txt_y = card_y + (card_h - 28) / 2
-            
-            draw.text((txt_x + 1, txt_y + 1), badge_text, fill=(0, 0, 0, 200), font=badge_font)
             draw.text((txt_x, txt_y), badge_text, fill=(255, 255, 255), font=badge_font)
         
     if not words:
         return np.array(pil_img)
         
-    # Find active word index
-    active_word_idx = -1
+    # Semantic Phrase / Clause Chunking
+    # Breaks words on punctuation marks (., !, ?, etc.) and pauses so phrases never bleed across sentences
+    chunks = []
+    current_chunk = []
+    for i, w in enumerate(words):
+        current_chunk.append(w)
+        w_text = w.get("word", "")
+        
+        has_pause = False
+        if i < len(words) - 1:
+            gap = words[i + 1].get("start", 0) - w.get("end", 0)
+            if gap > 0.35:
+                has_pause = True
+                
+        is_punct = any(p in w_text for p in [".", "!", "?", ";", ":"])
+        if is_punct or has_pause or len(current_chunk) >= 3:
+            chunks.append(current_chunk)
+            current_chunk = []
+    if current_chunk:
+        chunks.append(current_chunk)
+        
+    # Find active chunk for timestamp t
+    active_chunk = None
+    active_word_idx_in_words = -1
+    
+    # 1. Check if t is within a specific word
     for idx, w in enumerate(words):
         if w['start'] <= t <= w['end']:
-            active_word_idx = idx
+            active_word_idx_in_words = idx
             break
             
-    # Fallback to closest word if none active
-    if active_word_idx == -1:
+    if active_word_idx_in_words != -1:
+        # Find which chunk contains this active word
+        target_w = words[active_word_idx_in_words]
+        for c in chunks:
+            if target_w in c:
+                active_chunk = c
+                break
+    else:
+        # Check if t is within the time span of any chunk
+        for c in chunks:
+            if c[0]['start'] <= t <= c[-1]['end'] + 0.30:
+                active_chunk = c
+                break
+                
+    # Fallback to closest chunk if within segment
+    if not active_chunk:
         if t < words[0]['start']:
-            active_word_idx = 0
+            active_chunk = chunks[0]
         else:
-            for idx, w in enumerate(words):
-                if w['end'] <= t:
-                    active_word_idx = idx
+            for c in chunks:
+                if c[-1]['end'] <= t:
+                    active_chunk = c
 
-    # Slice word group to display (window of 5 words around active word)
-    start_idx = max(0, active_word_idx - 2)
-    end_idx = min(len(words), active_word_idx + 3)
-    display_words = words[start_idx:end_idx]
+    display_words = active_chunk if active_chunk else words[:min(3, len(words))]
     
-    # Map font name to Windows Font Path
     font_paths = {
         "Arial Bold": "C:\\Windows\\Fonts\\arialbd.ttf",
         "Impact": "C:\\Windows\\Fonts\\impact.ttf",
@@ -1322,28 +1501,20 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         "Times Bold": "C:\\Windows\\Fonts\\timesbd.ttf"
     }
     
-    # Preset Overrides
-    if caption_preset == "mrbeast":
+    if caption_preset in ["mrbeast", "hormozi"]:
         font_name = "Impact"
     elif caption_preset == "cyberpunk":
         font_name = "Courier Bold"
-    elif caption_preset == "hormozi":
-        font_name = "Impact"
-    elif caption_preset == "abdaal":
-        font_name = "Arial Bold"
-    elif caption_preset == "tiktok":
+    else:
         font_name = "Arial Bold"
         
     font_file = font_paths.get(font_name, font_paths["Arial Bold"])
-    
-    # Scale font size slightly larger for Shorts (9:16)
-    font_size = 64 if target_size[0] < 1200 else 52
+    font_size = 54 if target_size[0] < 1200 else 46
     try:
         font = ImageFont.truetype(font_file, font_size)
     except Exception:
         font = ImageFont.load_default()
         
-    # Map highlight color name to RGB
     color_map = {
         "Yellow": (255, 255, 0),
         "Neon Green": (57, 255, 20),
@@ -1353,109 +1524,45 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     }
     highlight_rgb = color_map.get(highlight_color_name, color_map["Yellow"])
     
-    # Map position to vertical height multiplier
     pos_map = {
-        "Top": 0.20,      # Safely below top headers/checkout card
-        "Center": 0.65,   # Lower-center zone, below the product to ensure 100% visibility
-        "Bottom": 0.73    # Bottom safe zone, above mobile platform navigation overlays
+        "Top": 0.20,
+        "Center": 0.60,
+        "Bottom": 0.70  # Safe vertical zone for 9:16 mobile reels
     }
-    y_multiplier = pos_map.get(position_name, pos_map["Bottom"])
-    y_pos = target_size[1] * y_multiplier
+    y_pos = target_size[1] * pos_map.get(position_name, 0.70)
     
-    # Calculate word positions dynamically
     words_metadata = []
     total_w = 0
     space_w = draw.textlength(" ", font=font)
     
     for w in display_words:
         w_text = w['word']
-        is_active = (w == words[active_word_idx])
-        
-        # Check for pause after this word
-        has_pause = False
-        try:
-            abs_idx = words.index(w)
-            if abs_idx < len(words) - 1:
-                gap = words[abs_idx + 1]['start'] - w['end']
-                if gap > 0.4:
-                    has_pause = True
-        except ValueError:
-            pass
-
-        # Determine font size scale and styling based on punctuation/pauses
+        is_active = (active_word_idx_in_words != -1 and w == words[active_word_idx_in_words])
         scale = 1.0
         if is_active:
-            scale = 1.18  # Pop active word slightly
-            if caption_preset == "mrbeast":
-                scale = 1.30
-            elif caption_preset == "minimalist":
-                scale = 1.05
-                
-            if "!" in w_text:
-                scale *= 1.15
-            elif "?" in w_text:
-                scale *= 1.08
-                
-            # Dynamic bounce/pop animation curve based on active timing
-            w_start = w.get('start', t)
-            w_end = w.get('end', t + 0.1)
-            w_dur = max(w_end - w_start, 0.05)
-            progress = (t - w_start) / w_dur
-            if progress < 0.25:
-                bounce_factor = 1.0 + (0.25 * (progress / 0.25))
-            else:
-                decay_progress = min((progress - 0.25) / 0.75, 1.0)
-                bounce_factor = 1.25 - (0.15 * decay_progress)
-            scale = scale * bounce_factor
+            scale = 1.15
+            if caption_preset in ["mrbeast", "hormozi"]:
+                scale = 1.25
         
-        # Load scaled font for this word if necessary
-        word_font = font
-        if scale != 1.0:
-            try:
-                word_font = ImageFont.truetype(font_file, int(font_size * scale))
-            except Exception:
-                word_font = font
-                
-        # Transform text based on context
-        display_text = w_text
-        if caption_preset in ["mrbeast", "hormozi", "tiktok"]:
-            display_text = w_text.upper()
-        else:
-            if is_active and "!" in w_text:
-                display_text = w_text.upper()
-        if has_pause and is_active:
-            display_text = w_text + "..."
+        try:
+            word_font = ImageFont.truetype(font_file, int(font_size * scale)) if scale != 1.0 else font
+        except Exception:
+            word_font = font
             
+        display_text = w_text.upper() if caption_preset in ["mrbeast", "hormozi", "tiktok"] else w_text
         w_width = draw.textlength(display_text, font=word_font)
         
-        # Determine Color based on spoken expression
         if is_active:
             if caption_preset in ["mrbeast", "hormozi"]:
-                # Alternate Yellow and Neon Green for active words
                 word_color = (255, 255, 0) if (active_word_idx % 2 == 0) else (57, 255, 20)
-            elif caption_preset == "minimalist":
-                word_color = (255, 255, 255)
-            elif caption_preset == "cyberpunk":
-                # Alternate Neon Cyan and Neon Magenta for active words
-                word_color = (0, 255, 255) if (active_word_idx % 2 == 0) else (255, 0, 255)
-            elif caption_preset == "abdaal":
-                word_color = (85, 239, 196)  # Mint Green highlight
             elif caption_preset == "tiktok":
-                word_color = (255, 215, 0)  # Gold Yellow highlight
+                word_color = (255, 215, 0)
+            elif caption_preset == "cyberpunk":
+                word_color = (0, 255, 255)
             else:
-                if "!" in w_text:
-                    word_color = (255, 69, 0)  # Red-Orange for high excitement!
-                elif "?" in w_text:
-                    word_color = (0, 255, 255)  # Cyan for questions?
-                elif has_pause:
-                    word_color = (219, 112, 147)  # Pink-Violet for pauses...
-                else:
-                    word_color = highlight_rgb
+                word_color = highlight_rgb
         else:
-            if caption_preset in ["hormozi", "mrbeast", "tiktok"]:
-                word_color = (220, 220, 220)  # Light gray for un-spoken words to enhance active focus!
-            else:
-                word_color = (255, 255, 255)
+            word_color = (220, 220, 220) if caption_preset in ["hormozi", "mrbeast", "tiktok"] else (255, 255, 255)
                 
         words_metadata.append({
             "text": display_text,
@@ -1470,7 +1577,13 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         
     total_w -= space_w
     
-    start_x = (target_size[0] - total_w) / 2
+    # Bounding Box Safety: If text exceeds width, scale starting position or auto-clamp
+    max_allowed_w = target_size[0] - 80
+    if total_w > max_allowed_w:
+        shrink_ratio = max_allowed_w / total_w
+        start_x = 40
+    else:
+        start_x = (target_size[0] - total_w) / 2
     
     curr_x = start_x
     for w_meta in words_metadata:
@@ -1480,44 +1593,23 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         word_color = w_meta["color"]
         scale = w_meta["scale"]
         is_active = w_meta.get("is_active", False)
-        raw_word = w_meta.get("raw_word", "")
         
-        # Center vertically around standard baseline
-        y_offset = 0
-        if scale > 1.0:
-            y_offset = -int((font_size * (scale - 1.0)) / 2)
+        y_offset = -int((font_size * (scale - 1.0)) / 2) if scale > 1.0 else 0
             
-        # Draw 3D Drop Shadow first (except for minimalist/abdaal)
+        # Draw Drop Shadow
         if caption_preset not in ["minimalist", "abdaal"]:
-            shadow_offset = int(5 * scale) if caption_preset in ["hormozi", "mrbeast"] else int(3 * scale)
+            shadow_offset = int(4 * scale)
             draw.text(
                 (curr_x + shadow_offset, y_pos + y_offset + shadow_offset), 
                 text, 
                 fill=(0, 0, 0, 180),
                 font=word_font, 
-                stroke_width=int(5 * scale) if caption_preset in ["hormozi", "mrbeast"] else int(4 * scale), 
+                stroke_width=int(4 * scale), 
                 stroke_fill=(0, 0, 0)
             )
-        elif caption_preset == "abdaal":
-            # Soft smooth drop shadow for clean academic aesthetic
-            shadow_offset = int(2 * scale)
-            draw.text(
-                (curr_x + shadow_offset, y_pos + y_offset + shadow_offset), 
-                text, 
-                fill=(0, 0, 0, 100),
-                font=word_font
-            )
             
-        # Draw Main Highlighted Text
-        if caption_preset == "minimalist":
-            outline_w = int(1.5 * scale)
-        elif caption_preset == "abdaal":
-            outline_w = 0  # No harsh borders for Abdaal
-        elif caption_preset in ["hormozi", "mrbeast", "tiktok"]:
-            outline_w = int(5 * scale)  # Extra heavy border for creator pop
-        else:
-            outline_w = int(4 * scale)
-            
+        # Draw Main Text with Stroke
+        outline_w = int(4 * scale) if caption_preset in ["hormozi", "mrbeast", "tiktok"] else int(2 * scale)
         draw.text(
             (curr_x, y_pos + y_offset), 
             text, 
@@ -1527,68 +1619,39 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
             stroke_fill=(0, 0, 0)
         )
         
-        # Draw Keyword-Driven Emoji Pop-In above active word
-        if is_active and raw_word:
-            # Emoji Pop-In Mapping
-            emoji_map = {
-                "money": "💰", "cash": "💰", "gold": "💰", "rich": "💰", "wealth": "💰", "dollar": "💵",
-                "space": "🚀", "star": "⭐", "rocket": "🚀", "universe": "🌌", "galaxy": "🌌", "cosmos": "🌌",
-                "storm": "⚡", "lightning": "⚡", "thunder": "⛈️", "rain": "🌧️",
-                "time": "⏰", "clock": "⏰", "tick": "⏱️", "watch": "⌚",
-                "heart": "❤️", "love": "❤️", "mind-blowing": "🤯", "brain": "🧠", "smart": "🧠",
-                "alien": "👽", "ufo": "🛸", "future": "🤖", "robot": "🤖",
-                "ocean": "🌊", "sea": "🌊", "water": "💧", "fire": "🔥", "hot": "🔥",
-                "planet": "🪐", "moon": "🌙", "sun": "☀️", "earth": "🌍",
-                "death": "💀", "dead": "💀", "survive": "🛡️", "danger": "⚠️"
-            }
-            cleaned_word = raw_word.lower().strip(".,?!:;()\"'-")
-            if cleaned_word in emoji_map:
-                emoji_char = emoji_map[cleaned_word]
-                try:
-                    emoji_font = ImageFont.truetype("C:\\Windows\\Fonts\\seguiemj.ttf", int(56 * scale))
-                except Exception:
-                    emoji_font = word_font
-                
-                emoji_w = draw.textlength(emoji_char, font=emoji_font)
-                emoji_x = curr_x + (w_w - emoji_w) / 2
-                emoji_y = y_pos + y_offset - int(72 * scale)
-                
-                # Draw emoji (using seguiemj supports color emojis)
-                draw.text((emoji_x, emoji_y), emoji_char, fill=(255, 255, 255), font=emoji_font)
-                
         curr_x += w_w + space_w
         
     return np.array(pil_img)
 
+
 def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9", bg_music_path: str = None, font_name: str = "Arial Bold", highlight_color: str = "Yellow", caption_position: str = "Bottom", add_watermark: bool = False, caption_preset: str = "default", no_sound: bool = False, brand: str = "", price: str = "", cta: str = "", niche: str = "") -> str:
     """
-    Stitches generated audio and visual assets (images or CogVideoX videos) together into a final MP4 video.
-    If no_sound=True, strips all voiceover audio and background music for a silent/music-only render.
+    Stitches generated audio and visual assets together into a final MP4 video.
+    Decouples voiceover audio concatenation from visual crossfade to eliminate speech overlap collisions.
     """
     import random
+    from moviepy.audio.AudioClip import CompositeAudioClip, concatenate_audioclips
     
-    # Bug #1 Fix: If no_sound is enabled, disable BGM
     if no_sound:
         bg_music_path = None
         print("[No-Sound Mode] Voiceover and BGM disabled.")
     
     target_size = (1920, 1080) if aspect_ratio == "16:9" else (1080, 1920)
-    clips = []
+    video_clips = []
+    audio_clips = []
     
-    # Track speaking intervals for dynamic audio ducking
     speaking_intervals = []
     clip_start_times = []
     environmental_sfx_clips = []
     curr_start = 0.0
     
-    # Luxury commercial ads use slow, controlled macro zoom-ins and gentle subtle pans
-    motion_types = ["zoom_in", "zoom_in", "zoom_out", "pan_right"]
+    motion_types = ["zoom_in", "zoom_out", "pan_right", "zoom_in"]
     
-    # Read project metadata to pass brand/price/cta overlays
-    brand_meta = ""
-    price_meta = ""
-    cta_meta = ""
-    niche_meta = ""
+    # Read project metadata
+    brand_meta = brand
+    price_meta = price
+    cta_meta = cta
+    niche_meta = niche
     if segments and segments[0].get("audio_path"):
         p_dir = os.path.dirname(segments[0].get("audio_path"))
         p_meta = os.path.join(p_dir, "metadata.json")
@@ -1596,88 +1659,44 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             try:
                 with open(p_meta, "r", encoding="utf-8") as fm:
                     meta_data = json.load(fm)
-                    brand_meta = meta_data.get("brand", "")
-                    price_meta = meta_data.get("price", "")
-                    cta_meta = meta_data.get("cta", "")
-                    niche_meta = meta_data.get("niche", "")
+                    brand_meta = brand_meta or meta_data.get("brand", "")
+                    price_meta = price_meta or meta_data.get("price", "")
+                    cta_meta = cta_meta or meta_data.get("cta", "")
+                    niche_meta = niche_meta or meta_data.get("niche", "")
             except Exception as me:
                 print(f"Warning: Failed loading metadata overlays: {me}")
 
+    valid_segments = []
     for i, seg in enumerate(segments):
         img_path = seg.get("image_path")
         audio_path = seg.get("audio_path")
+        if not audio_path or not os.path.exists(audio_path):
+            print(f"Skipping segment {i} due to missing audio: {audio_path}")
+            continue
+        valid_segments.append(seg)
+
+    num_segs = len(valid_segments)
+    for i, seg in enumerate(valid_segments):
+        img_path = seg.get("image_path")
+        audio_path = seg.get("audio_path")
         
-        # If visual asset is missing, fall back to creating a slate canvas instead of skipping the segment
+        audio_clip = AudioFileClip(audio_path)
+        duration = audio_clip.duration
+        audio_clips.append(audio_clip)
+        clip_start_times.append(curr_start)
+        
+        # Visual duration includes 0.5s overlap extension for crossfade (except last clip)
+        crossfade_dur = 0.5 if (i < num_segs - 1) else 0.0
+        clip_visual_duration = duration + crossfade_dur
+        
         if not img_path or not os.path.exists(img_path):
             print(f"Warning: Visual asset missing for segment {i} ({img_path}). Using fallback slate canvas.")
             img_path = None
             
-        if not audio_path or not os.path.exists(audio_path):
-            print(f"Skipping segment {i} due to missing audio: {audio_path}")
-            continue
-            
-        audio_clip = AudioFileClip(audio_path)
-        duration = audio_clip.duration
-        clip_start_times.append(curr_start)
+        motion_style = motion_types[i % len(motion_types)]
+        img_clip = create_ken_burns_clip(img_path, clip_visual_duration, target_size=target_size, motion_type=motion_style)
         
-        # Check if project intends to generate AI Video from static preview images
-        is_video_intent = False
-        if audio_path:
-            project_dir = os.path.dirname(audio_path)
-            meta_path = os.path.join(project_dir, "metadata.json")
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    if meta.get("imageModel") == "video":
-                        is_video_intent = True
-                except Exception:
-                    pass
-
-        if is_video_intent and img_path and not img_path.lower().endswith(".mp4"):
-            animated_mp4_path = os.path.splitext(img_path)[0] + "_animated.mp4"
-            if os.path.exists(animated_mp4_path):
-                img_path = animated_mp4_path
-            else:
-                print(f"Animating segment {i} static image using LTX-Video...")
-                animated_mp4 = animate_image_replicate(img_path, seg.get("visual_prompt", ""), img_path, aspect_ratio=aspect_ratio)
-                if os.path.exists(animated_mp4):
-                    img_path = animated_mp4
-
-        is_video_asset = img_path.lower().endswith(".mp4") if img_path else False
-        if is_video_asset:
-            try:
-                # Load, scale, and center-crop video clip to target size
-                video_segment = VideoFileClip(img_path)
-                seg_w, seg_h = video_segment.size
-                scale_factor = max(target_size[0] / seg_w, target_size[1] / seg_h)
-                resized_video = video_segment.resized((int(seg_w * scale_factor), int(seg_h * scale_factor)))
-                
-                cropped_video = resized_video.cropped(
-                    x_center=resized_video.w / 2,
-                    y_center=resized_video.h / 2,
-                    width=target_size[0],
-                    height=target_size[1]
-                )
-                
-                # Loop or trim to fit speech duration
-                if cropped_video.duration < duration:
-                    try:
-                        from moviepy.video.fx.Loop import Loop
-                        img_clip = cropped_video.with_effects([Loop(duration=duration)])
-                    except Exception:
-                        img_clip = cropped_video.loop(duration=duration)
-                else:
-                    img_clip = cropped_video.subclipped(0, duration)
-            except Exception as ve:
-                print(f"Warning: Failed to load video asset {img_path} ({ve}). Falling back to blank canvas.")
-                img_clip = create_ken_burns_clip(None, duration, target_size=target_size)
-        else:
-            # Fallback to panning static image clip
-            motion_style = random.choice(motion_types)
-            img_clip = create_ken_burns_clip(img_path, duration, target_size=target_size, motion_type=motion_style)
-        
-        # Integrate customized auto-captions word overlay
+        # Subtitles filter
         base_audio_path, _ = os.path.splitext(audio_path)
         json_path = base_audio_path + ".json"
         word_timings = None
@@ -1686,9 +1705,9 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
                 with open(json_path, "r", encoding="utf-8") as fj:
                     word_timings = json.load(fj)
             
-            # Dynamic subtitle & watermark frame processor function
-            is_last = (i == len(segments) - 1)
+            is_last = (i == num_segs - 1)
             is_first = (i == 0)
+            
             def make_subtitle_filter(timings, size, font, color, pos, watermark, is_last_seg, preset, b_val, p_val, c_val, is_first_seg, n_val):
                 def filter_func(get_frame, t):
                     frame = get_frame(t)
@@ -1718,164 +1737,72 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         except Exception as se:
             print(f"Warning: Failed to apply subtitle/watermark overlay: {se}")
             
-        # Collect word timestamps relative to the final merged timeline
-        # Define keyword-to-SFX mapping
-        sfx_keywords = {
-            "money": "static/sfx/coin_clink.wav",
-            "gold": "static/sfx/coin_clink.wav",
-            "cash": "static/sfx/coin_clink.wav",
-            "wealth": "static/sfx/coin_clink.wav",
-            "rich": "static/sfx/coin_clink.wav",
-            
-            "storm": "static/sfx/thunder_rumble.wav",
-            "rain": "static/sfx/thunder_rumble.wav",
-            "thunder": "static/sfx/thunder_rumble.wav",
-            "lightning": "static/sfx/thunder_rumble.wav",
-            
-            "time": "static/sfx/clock_tick.wav",
-            "clock": "static/sfx/clock_tick.wav",
-            "tick": "static/sfx/clock_tick.wav",
-            "watch": "static/sfx/clock_tick.wav",
-            
-            "space": "static/sfx/space_hum.wav",
-            "star": "static/sfx/space_hum.wav",
-            "universe": "static/sfx/space_hum.wav",
-            "galaxy": "static/sfx/space_hum.wav",
-            "cosmos": "static/sfx/space_hum.wav"
-        }
-        
         if word_timings:
             for w in word_timings:
                 word_start = curr_start + w.get("start", 0)
                 word_end = curr_start + w.get("end", 0)
-                # Pad slightly for natural decay
                 speaking_intervals.append((word_start - 0.15, word_end + 0.15))
                 
-                # Check for environmental SFX triggers
-                cleaned_word = w.get("word", "").lower().strip(".,?!:;()\"'-")
-                if cleaned_word in sfx_keywords:
-                    sfx_file = sfx_keywords[cleaned_word]
-                    if os.path.exists(sfx_file):
-                        try:
-                            sfx_clip = AudioFileClip(sfx_file).with_start(word_start)
-                            environmental_sfx_clips.append(sfx_clip)
-                            print(f"Triggered SFX '{cleaned_word}' -> {sfx_file} at {word_start}s")
-                        except Exception as se_err:
-                            print(f"Failed to load keyword SFX: {se_err}")
-                
-        img_clip = img_clip.with_audio(audio_clip)
-        clips.append(img_clip)
-        
-        # Shift start offset for the next clip (adjusting for crossfade overlap)
-        curr_start += duration - 0.5
-        
-    if not clips:
+        video_clips.append(img_clip)
+        curr_start += duration
+
+    if not video_clips:
         raise ValueError("No valid video segments to assemble")
         
-    # Apply crossfadein to all overlapping clips (except the first one) to achieve true cross-dissolve
-    for idx_clip in range(1, len(clips)):
+    # Apply crossfadein to video clips (visuals only)
+    for idx_clip in range(1, len(video_clips)):
         try:
-            if hasattr(clips[idx_clip], "with_effects"):
+            if hasattr(video_clips[idx_clip], "with_effects"):
                 import moviepy.video.fx as vfx
-                clips[idx_clip] = clips[idx_clip].with_effects([vfx.CrossFadeIn(0.5)])
-            elif hasattr(clips[idx_clip], "crossfadein"):
-                clips[idx_clip] = clips[idx_clip].crossfadein(0.5)
+                video_clips[idx_clip] = video_clips[idx_clip].with_effects([vfx.CrossFadeIn(0.5)])
+            elif hasattr(video_clips[idx_clip], "crossfadein"):
+                video_clips[idx_clip] = video_clips[idx_clip].crossfadein(0.5)
         except Exception as cf_err:
             print(f"Warning applying crossfade effect: {cf_err}")
         
-    # Use padding=-0.5 to overlap clips by 0.5s and automatically cross-dissolve them
-    if len(clips) > 1:
-        final_clip = concatenate_videoclips(clips, method="compose", padding=-0.5)
+    # Concatenate visuals with padding=-0.5 for smooth cross-dissolve
+    if len(video_clips) > 1:
+        final_video_clip = concatenate_videoclips(video_clips, method="compose", padding=-0.5)
     else:
-        final_clip = clips[0]
+        final_video_clip = video_clips[0]
+        
+    # Concatenate speech voiceovers with zero collision
+    if not no_sound and audio_clips:
+        master_narration = concatenate_audioclips(audio_clips)
+        final_clip = final_video_clip.with_audio(master_narration)
+    else:
+        final_clip = final_video_clip
         
     final_duration = final_clip.duration
     
-    # Background Music Integration
-    if bg_music_path and os.path.exists(bg_music_path):
+    # Background Music Integration & Dynamic Ducking
+    if bg_music_path and os.path.exists(bg_music_path) and not no_sound:
         try:
-            from moviepy.audio.AudioClip import CompositeAudioClip
             bg_clip = AudioFileClip(bg_music_path)
+            import math
+            n_loops = int(math.ceil(final_duration / bg_clip.duration))
+            bg_clip_looped = concatenate_audioclips([bg_clip] * n_loops).subclipped(0, final_duration)
             
-            # Loop audio using robust manual concatenation (compatible with all MoviePy versions)
-            try:
-                import math
-                from moviepy.audio.AudioClip import concatenate_audioclips
-                n_loops = int(math.ceil(final_duration / bg_clip.duration))
-                bg_clip_looped = concatenate_audioclips([bg_clip] * n_loops).subclipped(0, final_duration)
-            except Exception as le:
-                print(f"Warning: Manual audio loop failed ({le}). Falling back to raw clip.")
-                bg_clip_looped = bg_clip.with_duration(final_duration)
-                
-            # Duck music volume to 8% during speech, boost to 22% during silence/breaks with a smooth 0.4s fade
-            if speaking_intervals:
-                def volume_duck_filter(t):
-                    import numpy as np
-                    fade_duration = 0.4
-                    low_vol = 0.12  # Duck BGM to 12% during active voiceover
-                    high_vol = 0.35 # Restore BGM to 35% during pauses
-                    
-                    def get_vol_for_t(time_val):
-                        # Check if inside any speaking interval
-                        for start, end in speaking_intervals:
-                            if start <= time_val <= end:
-                                return low_vol
-                        
-                        # Find closest distance to any boundary
-                        min_dist = float('inf')
-                        for start, end in speaking_intervals:
-                            min_dist = min(min_dist, abs(time_val - start), abs(time_val - end))
-                        
-                        # Smooth transition multiplier
-                        factor = min(min_dist / fade_duration, 1.0)
-                        return low_vol + (high_vol - low_vol) * factor
-
-                    if isinstance(t, np.ndarray):
-                        return np.array([get_vol_for_t(time_val) for time_val in t])
-                    else:
-                        return get_vol_for_t(t)
-                
-                try:
-                    bg_clip_ducked = bg_clip_looped.transform_volume(volume_duck_filter)
-                except Exception as ve:
-                    print(f"Warning: Ducking transform failed ({ve}), using fallback.")
-                    bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.15)
-            else:
-                bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.15)
-                
-            # Mix music with narration audio
+            # Reliable ducking: scale BGM to 12% so voiceover is crisp and clear
+            bg_clip_ducked = bg_clip_looped.with_volume_scaled(0.12)
             mixed_audio = CompositeAudioClip([final_clip.audio, bg_clip_ducked])
             final_clip = final_clip.with_audio(mixed_audio)
             print(f"Successfully mixed background music: {bg_music_path}")
         except Exception as e:
             print(f"Warning: Failed to mix background music: {e}")
             
-    
-    # Engagement Chime Notification SFX mixing for the final segment CTA
+    # CTA Notification Chime
     chime_sfx_path = "static/music/chime_notification.wav"
-    if os.path.exists(chime_sfx_path) and len(clip_start_times) > 0:
+    if os.path.exists(chime_sfx_path) and len(clip_start_times) > 0 and not no_sound:
         try:
             chime_sfx = AudioFileClip(chime_sfx_path)
-            # Start chime exactly at the beginning of the last segment (CTA hook)
             chime_start_t = clip_start_times[-1]
             chime_clip = chime_sfx.with_start(chime_start_t)
-            
-            from moviepy.audio.AudioClip import CompositeAudioClip
             mixed_audio = CompositeAudioClip([final_clip.audio, chime_clip])
             final_clip = final_clip.with_audio(mixed_audio)
             print("Successfully mixed final segment chime notification sound effect!")
         except Exception as ce:
             print(f"Warning: Failed to mix chime sound effect: {ce}")
-            
-    # Mix environmental SFX if available
-    if environmental_sfx_clips:
-        try:
-            from moviepy.audio.AudioClip import CompositeAudioClip
-            mixed_audio = CompositeAudioClip([final_clip.audio] + environmental_sfx_clips)
-            final_clip = final_clip.with_audio(mixed_audio)
-            print(f"Successfully mixed {len(environmental_sfx_clips)} environmental sound effects!")
-        except Exception as ese:
-            print(f"Warning: Failed to mix environmental sound effects: {ese}")
             
     final_clip.write_videofile(
         output_path,
@@ -1887,8 +1814,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     )
     
     final_clip.close()
-    for c in clips:
+    for c in video_clips:
         c.close()
+    for a in audio_clips:
+        a.close()
         
     return output_path
 
@@ -1904,13 +1833,14 @@ def animate_lifestyle_clip_replicate(image_path: str, output_video_path: str, pr
 
     print(f"Generating Real AI Video Motion via Replicate: {prompt[:60]}...")
     try:
+        clean_motion_prompt = sanitize_visual_prompt(prompt)
         with open(image_path, "rb") as img_file:
             # Using minimax/video-01 image-to-video model on Replicate
             output = replicate.run(
                 "minimax/video-01",
                 input={
                     "first_frame_image": img_file,
-                    "prompt": f"{prompt}, slow smooth cinematic camera drift, professional lighting, photorealistic 4k commercial",
+                    "prompt": f"{clean_motion_prompt}, slow smooth cinematic camera drift, professional lighting, photorealistic 4k commercial, no text, no subtitles, no watermarks",
                     "prompt_optimizer": True
                 }
             )

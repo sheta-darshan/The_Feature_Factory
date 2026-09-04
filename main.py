@@ -37,68 +37,19 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 templates = Jinja2Templates(directory="templates")
 
-class ScriptRequest(BaseModel):
-    niche: str
-    product_title: str
-    brand: str = ""
-    price: str = ""
-    cta: str = ""
-    image_path: str = ""
-    isolate_background: bool = True
-    duration: int = 30
-    visual_style: str = "Auto"
-    imageModel: str = "schnell"
-    voice: str = "Auto"
-    aspectRatio: str = "9:16"
-    captionPreset: str = "Auto"
-    brand_tone: str = "Luxury Prestige"
-    asset_type: str = "standalone"
-    enable_ai_video: bool = False
-    videoModel: str = "ltx-video"
-    ttsProvider: str = "edge-tts"
-    ttsVoice: str = "Auto"
-
-class Segment(BaseModel):
-    text_to_speak: str
-    visual_prompt: str
-    audio_path: str = ""
-    image_path: str = ""
-
-class AssetRequest(BaseModel):
-    projectId: str
-    segments: List[Segment]
-    aspectRatio: str = "16:9"
-    imageModel: str = "schnell"
-    voice: str = "en-US-GuyNeural"
-    ttsProvider: str = "edge-tts"
-
-class RenderRequest(BaseModel):
-    projectId: str
-    segments: List[Segment]
-    aspectRatio: str = "16:9"
-    musicTrack: str = ""
-    fontName: str = "Arial Bold"
-    highlightColor: str = "Yellow"
-    captionPosition: str = "Bottom"
-    addWatermark: bool = False
-    captionPreset: str = "default"
-    noSound: bool = False
-
-class TranslateProjectRequest(BaseModel):
-    projectId: str
-    targetLang: str
-    segments: List[Segment]
-
-class RegenerateSegmentRequest(BaseModel):
-    projectId: str
-    segmentIndex: int
-    textToSpeak: str
-    visualPrompt: str
-    aspectRatio: str = "16:9"
-    regenerateAudio: bool = True
-    regenerateImage: bool = True
-    imageModel: str = "schnell"
-    voice: str = "en-US-GuyNeural"
+from schemas import (
+    ScriptRequest,
+    StoryboardSegment,
+    Segment,
+    AssetRequest,
+    RenderRequest,
+    TranslateProjectRequest,
+    RegenerateSegmentRequest,
+    YouTubeUploadRequest,
+    ProjectMetadata,
+    ProductLock,
+    GenerationStepLog
+)
 
 @app.get("/", response_class=HTMLResponse)
 async def read_item(request: Request):
@@ -353,7 +304,20 @@ async def api_generate_script(req: ScriptRequest):
             "imageModel": req.imageModel,
             "voice": data.get("voice", req.voice),
             "captionPreset": data.get("captionPreset", req.captionPreset),
-            "segments": data.get("segments", [])
+            "segments": data.get("segments", []),
+            "product_lock": None,
+            "generation_logs": [
+                {
+                    "step_name": "script_generation",
+                    "model": "gemini-2.5-flash",
+                    "provider": "google",
+                    "prompt": f"{req.niche}: {req.product_title} (Brand: {req.brand})",
+                    "cost_estimate": 0.0005,
+                    "output_path": f"outputs/{project_id}/metadata.json",
+                    "timestamp": int(time.time()),
+                    "status": "completed"
+                }
+            ]
         }
         with open(f"outputs/{project_id}/metadata.json", "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=2)
@@ -521,6 +485,55 @@ async def api_generate_assets(req: AssetRequest):
     try:
         tasks = [process_segment(i, seg) for i, seg in enumerate(req.segments)]
         results = await asyncio.gather(*tasks)
+        
+        # Update metadata with generated results, product lock, and audit logs
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                meta["segments"] = results
+                meta["status"] = "assets_generated"
+                
+                # Derive and store ProductLock if not already present
+                raw_imgs = meta.get("rawProductImages", [])
+                if raw_imgs and os.path.exists(raw_imgs[0]) and not meta.get("product_lock"):
+                    try:
+                        from PIL import Image
+                        from rembg import remove
+                        with Image.open(raw_imgs[0]).convert("RGBA") as r_img:
+                            t_img = remove(r_img)
+                            meta["product_lock"] = generator.derive_product_lock(t_img)
+                    except Exception as pl_err:
+                        print(f"Product lock derivation note: {pl_err}")
+                
+                logs = meta.get("generation_logs", [])
+                for i, r in enumerate(results):
+                    logs.append({
+                        "step_name": f"voiceover_{i}",
+                        "model": voice_to_use,
+                        "provider": req.ttsProvider,
+                        "prompt": r.get("text_to_speak", ""),
+                        "cost_estimate": 0.0,
+                        "output_path": r.get("audio_path", ""),
+                        "timestamp": int(time.time()),
+                        "status": "completed"
+                    })
+                    logs.append({
+                        "step_name": f"image_generation_{i}",
+                        "model": req.imageModel,
+                        "provider": "replicate",
+                        "prompt": r.get("visual_prompt", ""),
+                        "cost_estimate": 0.003 if "schnell" in req.imageModel else 0.05,
+                        "output_path": r.get("image_path", ""),
+                        "timestamp": int(time.time()),
+                        "status": "completed"
+                    })
+                meta["generation_logs"] = logs
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+            except Exception as me:
+                print(f"Error updating metadata logs: {me}")
+
         return {
             "projectId": project_id,
             "segments": results
@@ -760,20 +773,38 @@ async def api_render_video(req: RenderRequest):
                 if not thumb_text:
                     thumb_text = meta.get("title", "IMAGINE IF!")[:20]
                 
-                # Generate thumbnail using Replicate Flux Dev, matching the project's layout format
+                # Generate thumbnail matching the project's layout format with true product fidelity
                 aspect_ratio = meta.get("aspectRatio", "16:9")
+                raw_imgs = meta.get("rawProductImages", [])
+                raw_img_path = raw_imgs[0] if raw_imgs and os.path.exists(raw_imgs[0]) else None
                 await asyncio.to_thread(
                     generator.generate_thumbnail,
                     project_id,
                     thumb_prompt,
                     thumb_text,
-                    aspect_ratio
+                    aspect_ratio,
+                    raw_img_path,
+                    meta.get("niche", "General Retail"),
+                    meta.get("visualStyle", "Auto")
                 )
                 thumbnail_url = f"outputs/{project_id}/thumbnail.jpg"
                 
                 meta["status"] = "rendered"
                 meta["videoUrl"] = f"outputs/{project_id}/final_video.mp4"
                 meta["thumbnailUrl"] = thumbnail_url
+                
+                logs = meta.get("generation_logs", [])
+                logs.append({
+                    "step_name": "video_assembly",
+                    "model": "moviepy",
+                    "provider": "local",
+                    "cost_estimate": 0.0,
+                    "output_path": f"outputs/{project_id}/final_video.mp4",
+                    "timestamp": int(time.time()),
+                    "status": "completed"
+                })
+                meta["generation_logs"] = logs
+                
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
             except Exception as e:
@@ -786,12 +817,6 @@ async def api_render_video(req: RenderRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to render video: {str(e)}")
-
-class YouTubeUploadRequest(BaseModel):
-    projectId: str
-    title: str
-    description: str
-    tags: str = ""
 
 @app.post("/api/youtube-upload")
 async def api_youtube_upload(req: YouTubeUploadRequest):

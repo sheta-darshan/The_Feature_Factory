@@ -23,6 +23,10 @@ async def generate_director_score(product_name: str, brand: str = "", niche: str
     """
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     
+    slide_dur = duration / float(max(1, num_slides))
+    max_words_per_slide = max(4, int(slide_dur * 2.3))
+    total_word_budget = max(12, int(duration * 2.3))
+
     prompt = f"""You are a world-class commercial video director and product cinematographer.
     
     Create a DIRECTOR SCORE — a structured JSON storyboard for a premium {niche} product video.
@@ -40,9 +44,11 @@ async def generate_director_score(product_name: str, brand: str = "", niche: str
     1. Each scene must have a SPECIFIC camera movement (not just "zoom in")
     2. Visual prompts must reference the PREVIOUS scene's color palette for consistency
     3. Narration must be conversational, high-energy, and at a 4th-grade reading level
-    4. The first scene is always the HERO REVEAL — product in a premium setting
-    5. The middle scene(s) are LIFESTYLE — product in real-world use
-    6. The final scene is the CTA — brand, price, and call to action
+    4. SCRIPT PACING CONSTRAINT: Target video duration is ~{duration} seconds across {num_slides} scenes (~{slide_dur:.1f}s per scene). Narration ('narration') for EACH scene MUST NOT exceed {max_words_per_slide} words (Total script budget: max {total_word_budget} words). Keep sentences short and punchy.
+    5. CRITICAL VISUAL PROMPT CONSTRAINT (ZERO TEXT / LOGO / NUMBERS / PRODUCT NAME POLICY): Diffusion models CANNOT render legible text. NEVER include any text, letters, typography, slogans, brand names, product purity numbers (e.g., '92.7'), prices, 'Buy Now' buttons, or CTA banners in 'visual_prompt'. 'visual_prompt' must ONLY describe physical background environment, surface materials, camera angle, and real-world studio or lifestyle lighting. The physical product and all text overlays are rendered separately by code.
+    6. The first scene is always the HERO REVEAL — product in a premium setting
+    7. The middle scene(s) are LIFESTYLE — product in real-world use
+    8. The final scene is the CTA — beauty shot with clean studio background (no baked-in text)
     
     Return STRICTLY as JSON with this exact structure:
     {{
@@ -51,7 +57,7 @@ async def generate_director_score(product_name: str, brand: str = "", niche: str
                 "id": 1,
                 "type": "hero_reveal",
                 "narration": "spoken text for voiceover",
-                "visual_prompt": "extremely detailed visual description for AI image generation",
+                "visual_prompt": "extremely detailed visual description for AI image generation (strictly no text/logos)",
                 "camera_movement": "one of: slow_zoom_in, dolly_forward, pan_left, pan_right, tilt_up, orbit_left, static_hero",
                 "duration_seconds": 3.5,
                 "transition_to_next": "one of: cross_dissolve, fade_black, slide_left, zoom_burst, match_cut"
