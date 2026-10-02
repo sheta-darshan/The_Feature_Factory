@@ -75,6 +75,7 @@ class ScriptRequest(BaseModel):
     ttsVoice: str = "Auto"
     use_director_score: bool = False
     animationTier: str = "static"
+    scriptModel: str = "gemini-2.5-pro"
 
 
 class AssetRequest(BaseModel):

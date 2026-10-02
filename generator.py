@@ -123,7 +123,7 @@ def derive_product_lock(transparent_img: Image.Image) -> dict:
     }
 
 
-async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto", use_director_score: bool = False) -> dict:
+async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto", use_director_score: bool = False, script_model: str = "gemini-2.5-pro") -> dict:
     """
     Sends the product details to Gemini to generate high-converting marketing copy and lifestyle prompts.
     """
@@ -203,10 +203,11 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
     
     max_retries = 3
     response = None
+    model_to_use = script_model if script_model in ["gemini-2.5-pro", "gemini-2.5-flash"] else "gemini-2.5-pro"
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=model_to_use,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
@@ -214,6 +215,11 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
             )
             break
         except Exception as e:
+            error_msg = str(e)
+            if model_to_use == "gemini-2.5-pro" and ("429" in error_msg or "quota" in error_msg.lower() or "not found" in error_msg.lower() or "ResourceExhausted" in error_msg):
+                print(f"Gemini 2.5 Pro quota ({e}). Falling back to gemini-2.5-flash...")
+                model_to_use = "gemini-2.5-flash"
+                continue
             if attempt < max_retries - 1:
                 await asyncio.sleep(10)
             else:
@@ -268,7 +274,7 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
         raise e
 
 
-async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "Auto", caption_preset: str = "Auto") -> dict:
+async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "Auto", caption_preset: str = "Auto", script_model: str = "gemini-2.5-pro") -> dict:
     """
     Sends the user's thought to Gemini to generate a script and YouTube SEO metadata.
     Auto-detects and resolves optimal visual style, narrator voice, duration, layout format, and caption preset based on the topic.
@@ -417,10 +423,11 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
         
     max_retries = 3
     response = None
+    model_to_use = script_model if script_model in ["gemini-2.5-pro", "gemini-2.5-flash"] else "gemini-2.5-pro"
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model=model_to_use,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
@@ -429,6 +436,10 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
             break
         except Exception as e:
             error_msg = str(e)
+            if model_to_use == "gemini-2.5-pro" and ("429" in error_msg or "quota" in error_msg.lower() or "not found" in error_msg.lower() or "ResourceExhausted" in error_msg):
+                print(f"Gemini 2.5 Pro ({e}). Falling back to gemini-2.5-flash for rapid generation...")
+                model_to_use = "gemini-2.5-flash"
+                continue
             is_429 = "429" in error_msg or "quota" in error_msg.lower() or "ResourceExhausted" in error_msg
             if is_429 and attempt < max_retries - 1:
                 wait_time = 15 + attempt * 15
@@ -1020,11 +1031,77 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
         print(f"Product background replacement failed ({e}). Falling back to text-to-image...")
         return generate_image_replicate(cleaned_prompt, output_path, aspect_ratio, image_model)
 
+def generate_image_google(prompt: str, output_path: str, aspect_ratio: str = "9:16", model: str = "imagen-3.0-generate-002", niche: str = "General Retail", visual_style: str = "Auto") -> str:
+    """
+    Generates a photorealistic still image using Google's native Imagen 3 via google-genai SDK.
+    Uses the user's GEMINI_API_KEY. Falls back to Replicate/Pollinations if needed.
+    """
+    global client
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("GEMINI_API_KEY not configured for Imagen 3. Falling back to Replicate...")
+        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model="schnell", niche=niche, visual_style=visual_style)
+    
+    if not client:
+        client = genai.Client(api_key=api_key)
+        
+    cleaned_prompt = enrich_cinematic_prompt(prompt, niche=niche, visual_style=visual_style)
+    cleaned_prompt = sanitize_visual_prompt(cleaned_prompt)
+    
+    # Google Imagen 3 aspect ratios: "1:1", "3:4", "4:3", "9:16", "16:9"
+    ar = "9:16"
+    if aspect_ratio:
+        if "16:9" in str(aspect_ratio):
+            ar = "16:9"
+        elif "1:1" in str(aspect_ratio):
+            ar = "1:1"
+        elif "4:3" in str(aspect_ratio):
+            ar = "4:3"
+        elif "3:4" in str(aspect_ratio):
+            ar = "3:4"
+        else:
+            ar = "9:16"
+            
+    print(f"Generating Google Imagen 3 photorealistic asset: {cleaned_prompt[:60]}...")
+    try:
+        result = client.models.generate_images(
+            model=model,
+            prompt=cleaned_prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=ar,
+                output_mime_type="image/jpeg",
+                person_generation="ALLOW_ADULT",
+                safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+            )
+        )
+        
+        if result and hasattr(result, "generated_images") and result.generated_images:
+            first_img = result.generated_images[0]
+            if hasattr(first_img, "image") and first_img.image.image_bytes:
+                img_bytes = first_img.image.image_bytes
+                jpg_path = os.path.splitext(output_path)[0] + ".jpg"
+                with open(jpg_path, "wb") as f:
+                    f.write(img_bytes)
+                print(f"Successfully generated Google Imagen 3 asset: {jpg_path}")
+                return jpg_path
+                
+        print("Google Imagen 3 returned no images. Falling back to Replicate...")
+        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model="schnell", niche=niche, visual_style=visual_style)
+        
+    except Exception as e:
+        print(f"Google Imagen 3 generation failed ({e}). Falling back to Replicate...")
+        return generate_image_replicate(prompt, output_path, aspect_ratio, image_model="schnell", niche=niche, visual_style=visual_style)
+
 def generate_image_replicate(prompt: str, output_path: str, aspect_ratio: str = "16:9", image_model: str = "schnell", niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
-    Generates an image from a prompt using Replicate (black-forest-labs/flux-schnell or flux-dev).
+    Generates an image from a prompt using Replicate or Google Imagen 3.
     Falls back to Pollinations.ai if Replicate is not configured, has no credit, or fails.
     """
+    # Route Google Imagen 3
+    if image_model in ["imagen-3", "imagen", "google"] or (IMAGE_MODELS.get(image_model, {}).get("provider") == "google"):
+        return generate_image_google(prompt, output_path, aspect_ratio, niche=niche, visual_style=visual_style)
+
     # Normalize aspect ratio for Replicate inputs
     if aspect_ratio == "Auto" or not aspect_ratio:
         aspect_ratio = "9:16"

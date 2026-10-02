@@ -6,6 +6,16 @@ We curate only the best 3-5 models per category for production quality.
 
 # ─── Image Generation Models ─────────────────────────────────────────────────
 IMAGE_MODELS = {
+    "imagen-3": {
+        "label": "✨ Google Imagen 3 (Photorealistic, Google AI)",
+        "provider": "google",
+        "model_id": "imagen-3.0-generate-002",
+        "cost_per_image": 0.03,
+        "speed": "fast",
+        "quality": "ultra",
+        "supports_aspect_ratio": True,
+        "best_for": ["photorealism", "cinematic lighting", "native google api", "crisp detail"],
+    },
     "flux-schnell": {
         "label": "⚡ Flux Schnell (Fast, Good Quality)",
         "provider": "replicate",

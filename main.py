@@ -304,6 +304,7 @@ async def api_generate_script(req: ScriptRequest):
     if not os.getenv("GEMINI_API_KEY"):
         raise HTTPException(status_code=400, detail="GEMINI_API_KEY is not configured in .env")
     try:
+        script_model = getattr(req, "scriptModel", None) or getattr(req, "script_model", None) or "gemini-2.5-pro"
         data = await generator.generate_product_campaign(
             niche=req.niche,
             product_title=req.product_title,
@@ -315,7 +316,8 @@ async def api_generate_script(req: ScriptRequest):
             voice=req.voice,
             aspect_ratio=req.aspectRatio,
             caption_preset=req.captionPreset,
-            use_director_score=req.use_director_score
+            use_director_score=req.use_director_score,
+            script_model=script_model
         )
         project_id = f"project_{int(time.time())}"
         # Ensure project output directory exists
@@ -342,6 +344,7 @@ async def api_generate_script(req: ScriptRequest):
             "assetType": req.asset_type,
             "enableAiVideo": req.enable_ai_video,
             "animationTier": req.animationTier,
+            "scriptModel": script_model,
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),

@@ -595,7 +595,12 @@
                             <option value="full-standard">&#127909; Full Animation - MiniMax H3 (~$0.36)</option>
                             <option value="full-premium">&#127902; Full Premium - Kling 3.0 Pro (~$0.60)</option>
                         </select>
-                                                <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🎙️ TTS Voice Provider</label>
+                        <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🧠 AI Storytelling Model</label>
+                        <select id="script-model-select" style="font-size:0.8rem;">
+                            <option value="gemini-2.5-pro" selected>🚀 Gemini 2.5 Pro (Deep Retention, Viral Psychology)</option>
+                            <option value="gemini-2.5-flash">⚡ Gemini 2.5 Flash (Ultra-Fast)</option>
+                        </select>
+                        <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🎙️ TTS Voice Provider</label>
                         <select id="tts-provider-select" style="font-size:0.8rem;">
                             <option value="edge-tts" selected>🆓 Edge TTS (Free, Microsoft)</option>
                             <option value="openai-tts">💎 OpenAI TTS (Premium, Natural)</option>
@@ -703,9 +708,10 @@
 
             <div class="row">
                 <div class="form-group">
-                    <label for="model-select">AI Image Model (Replicate)</label>
+                    <label for="model-select">AI Image Generation Model</label>
                     <select id="model-select">
-                        <option value="flux-schnell" selected>&#9889; Flux Schnell (Fast, $0.003/img)</option>
+                        <option value="imagen-3" selected>✨ Google Imagen 3 (Photorealistic, Google AI)</option>
+                        <option value="flux-schnell">&#9889; Flux Schnell (Fast, $0.003/img)</option>
                         <option value="flux-dev">&#127912; Flux Dev (Higher Quality, $0.025/img)</option>
                         <option value="sdxl">&#128444; SDXL (Balanced, $0.01/img)</option>
                         <option value="ideogram">&#9997; Ideogram V2 (Text-in-Image, $0.08/img)</option>
@@ -1412,24 +1418,26 @@
             btn.disabled = true;
             spinner.style.display = "inline-block";
             status.style.display = "flex";
-            status.innerHTML = `<span class="spinner"></span> Brainstorming script segments and SEO tags with Gemini...`;
+                status.innerHTML = `<span class="spinner"></span> Engineering viral script with Gemini 2.5 Pro...`;
 
-            try {
-                const aspectRatio = document.getElementById("aspect-select").value;
-                const captionPreset = document.getElementById("preset-select").value;
-                
-                const use_director_score = document.getElementById("director-score-check") ? document.getElementById("director-score-check").checked : false;
-                
-                const response = await fetch("/api/generate-script", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone, asset_type, enable_ai_video,
-                        videoModel: document.getElementById("video-model-select") ? document.getElementById("video-model-select").value : "ltx-video",
-                        ttsProvider: document.getElementById("tts-provider-select") ? document.getElementById("tts-provider-select").value : "edge-tts",
-                        animationTier: document.getElementById("animation-tier-select") ? document.getElementById("animation-tier-select").value : "static",
-                        use_director_score: use_director_score
-                    })
-                });
+                try {
+                    const aspectRatio = document.getElementById("aspect-select").value;
+                    const captionPreset = document.getElementById("preset-select").value;
+                    
+                    const use_director_score = document.getElementById("director-score-check") ? document.getElementById("director-score-check").checked : false;
+                    const scriptModel = document.getElementById("script-model-select") ? document.getElementById("script-model-select").value : "gemini-2.5-pro";
+                    
+                    const response = await fetch("/api/generate-script", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone, asset_type, enable_ai_video,
+                            videoModel: document.getElementById("video-model-select") ? document.getElementById("video-model-select").value : "ltx-video",
+                            ttsProvider: document.getElementById("tts-provider-select") ? document.getElementById("tts-provider-select").value : "edge-tts",
+                            animationTier: document.getElementById("animation-tier-select") ? document.getElementById("animation-tier-select").value : "static",
+                            scriptModel: scriptModel,
+                            use_director_score: use_director_score
+                        })
+                    });
 
                 if (!response.ok) {
                     const err = await response.json();
