@@ -10,3 +10,10 @@ jinja2
 pydantic
 rembg[cpu]
 python-multipart
+httpx
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+anthropic
+filelock
+fal-client

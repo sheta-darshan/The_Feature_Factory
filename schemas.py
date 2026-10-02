@@ -41,6 +41,12 @@ class StoryboardSegment(BaseModel):
     image_path: str = ""
     duration_seconds: Optional[float] = None
     word_count: Optional[int] = None
+    camera_movement: Optional[str] = "slow_zoom_in"
+    transition_to_next: Optional[str] = "cross_dissolve"
+    scene_type: Optional[str] = "lifestyle"
+    visual_source: Optional[str] = "auto"  # "auto" | "ai_inpainting" | "stock_video" | "stock_image"
+    motion_prompt: Optional[str] = ""
+    beat_type: Optional[str] = ""
 
 
 # Alias for backward compatibility with existing endpoints
@@ -67,6 +73,8 @@ class ScriptRequest(BaseModel):
     videoModel: str = "ltx-video"
     ttsProvider: str = "edge-tts"
     ttsVoice: str = "Auto"
+    use_director_score: bool = False
+    animationTier: str = "static"
 
 
 class AssetRequest(BaseModel):
@@ -76,6 +84,9 @@ class AssetRequest(BaseModel):
     imageModel: str = "flux-schnell"
     voice: str = "en-US-GuyNeural"
     ttsProvider: str = "edge-tts"
+    animationTier: Optional[str] = "static"
+    videoModel: Optional[str] = None
+    enableAiVideo: Optional[bool] = False
 
 
 class RenderRequest(BaseModel):

@@ -453,7 +453,14 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
         
         # 1. Regenerate voiceover if requested
         if req.regenerateAudio:
-            tasks.append(generator.generate_voiceover(req.textToSpeak, audio_path, voice=voice_to_use, rate=rate_str, pitch=pitch_str))
+            tts_provider = meta.get("ttsProvider", "edge-tts") if meta else "edge-tts"
+            if tts_provider == "elevenlabs":
+                tasks.append(generator.generate_voiceover_elevenlabs(req.textToSpeak, audio_path, voice=voice_to_use))
+            elif tts_provider == "openai-tts":
+                import tts_providers
+                tasks.append(tts_providers.generate_voiceover_multi(req.textToSpeak, audio_path, voice=voice_to_use, provider="openai-tts"))
+            else:
+                tasks.append(generator.generate_voiceover(req.textToSpeak, audio_path, voice=voice_to_use, rate=rate_str, pitch=pitch_str))
         else:
             # Dummy awaitable to match unpack count
             async def dummy_voice():

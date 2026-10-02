@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 import replicate
 from dotenv import load_dotenv
-from ai_models import IMAGE_MODELS, VIDEO_MODELS
+from ai_models import IMAGE_MODELS, VIDEO_MODELS, get_ambient_sfx_path, match_ambient_sfx
 from tts_providers import generate_voiceover_multi
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
@@ -2033,6 +2033,44 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             print("Successfully mixed final segment chime notification sound effect!")
         except Exception as ce:
             print(f"Warning: Failed to mix chime sound effect: {ce}")
+
+    # Ambient SFX Layer (Subtle environmental presence)
+    if not no_sound and final_clip.audio:
+        matched_sfx_path = None
+        for seg in segments:
+            v_prompt = seg.get("visual_prompt", "")
+            cand_path = get_ambient_sfx_path(v_prompt)
+            if cand_path and os.path.exists(cand_path):
+                matched_sfx_path = cand_path
+                break
+        
+        if matched_sfx_path and os.path.exists(matched_sfx_path):
+            try:
+                amb_clip = AudioFileClip(matched_sfx_path)
+                import math
+                n_amb_loops = int(math.ceil(final_duration / max(0.1, amb_clip.duration)))
+                amb_looped = concatenate_audioclips([amb_clip] * n_amb_loops).subclipped(0, final_duration)
+                amb_ducked = amb_looped.with_volume_scaled(0.08)
+                final_clip = final_clip.with_audio(CompositeAudioClip([final_clip.audio, amb_ducked]))
+                print(f"Successfully mixed ambient sound bed: {matched_sfx_path}")
+            except Exception as amb_err:
+                print(f"Warning: Failed to mix ambient SFX ({matched_sfx_path}): {amb_err}")
+
+    # Transition Whoosh SFX at slide cuts
+    if not no_sound and final_clip.audio and len(clip_start_times) > 1:
+        trans_sfx_path = "static/sfx/whoosh.wav" if os.path.exists("static/sfx/whoosh.wav") else "static/music/whoosh_transition.wav"
+        if os.path.exists(trans_sfx_path):
+            try:
+                whoosh_clips = []
+                for t_start in clip_start_times[1:]:
+                    w_clip = AudioFileClip(trans_sfx_path).with_start(max(0, t_start - 0.2)).with_volume_scaled(0.18)
+                    whoosh_clips.append(w_clip)
+                if whoosh_clips:
+                    mixed_whoosh = CompositeAudioClip([final_clip.audio] + whoosh_clips)
+                    final_clip = final_clip.with_audio(mixed_whoosh)
+                    print(f"Successfully mixed {len(whoosh_clips)} transition whooshes!")
+            except Exception as w_err:
+                print(f"Warning: Failed to mix transition whoosh: {w_err}")
             
     final_clip.write_videofile(
         output_path,

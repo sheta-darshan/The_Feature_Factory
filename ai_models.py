@@ -305,3 +305,25 @@ def match_ambient_sfx(visual_prompt: str) -> str:
             best_match = sfx_name
     return best_match
 
+
+def get_ambient_sfx_path(visual_prompt: str) -> str:
+    """Returns the resolved file path for the best matching ambient SFX, or empty string."""
+    import os
+    match = match_ambient_sfx(visual_prompt)
+    if match and match in AMBIENT_SFX:
+        filename = AMBIENT_SFX[match]["file"]
+        project_dir = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            os.path.join(project_dir, "static", "sfx", filename),
+            os.path.join(project_dir, "static", "sfx", filename.replace(".mp3", ".wav")),
+            os.path.join(project_dir, "static", "music", filename),
+            os.path.join("static", "sfx", filename),
+            os.path.join("static", "sfx", filename.replace(".mp3", ".wav")),
+            os.path.join("static", "music", filename),
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                return p
+    return ""
+
+
