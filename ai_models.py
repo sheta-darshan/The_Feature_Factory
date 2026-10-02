@@ -103,6 +103,27 @@ VIDEO_MODELS = {
         "speed": "medium",
         "best_for": ["general motion", "atmospheric effects"],
     },
+    "kling-3.0-pro": {
+        "label": "🎬 Kling 3.0 Pro (Best Animated Storytelling)",
+        "provider": "fal",
+        "model_id": "kling-video/v3/image-to-video",
+        "cost_per_video": 0.20,
+        "duration": "5s",
+        "quality": "ultra-premium",
+        "speed": "slow",
+        "supports_audio": True,
+        "best_for": ["character animation", "cinematic storytelling", "viral content"],
+    },
+    "minimax-h3": {
+        "label": "🔥 MiniMax H3 (Cinematic Motion)",
+        "provider": "fal",
+        "model_id": "minimax/h3/image-to-video",
+        "cost_per_video": 0.12,
+        "duration": "5s",
+        "quality": "premium",
+        "speed": "medium",
+        "best_for": ["cinematic reveals", "product motion", "aesthetic content"],
+    },
 }
 
 # ─── TTS Voice Providers ──────────────────────────────────────────────────────
@@ -220,3 +241,67 @@ def get_available_models_for_frontend() -> dict:
         "video_models": {k: v["label"] for k, v in VIDEO_MODELS.items()},
         "tts_providers": {k: v["label"] for k, v in TTS_PROVIDERS.items()},
     }
+
+# \U0001f3ac Animation Quality Tiers \U0001f3ac
+ANIMATION_TIERS = {
+    "static": {
+        "label": "Static (Ken Burns Pan/Zoom - Free)",
+        "video_model": None,
+        "animate_slides": [],
+        "description": "Classic image panning. No AI video generation cost.",
+    },
+    "hybrid": {
+        "label": "Hybrid (Animate Hook + Payoff Slides)",
+        "video_model": "minimax-h3",
+        "animate_slides": [0, -1],  # First and last slide only
+        "description": "Animate the scroll-stopping hook and the final payoff. Best value.",
+    },
+    "full-standard": {
+        "label": "Full Animation - Standard (MiniMax H3)",
+        "video_model": "minimax-h3",
+        "animate_slides": "all",
+        "description": "Every slide is an animated video clip using MiniMax H3.",
+    },
+    "full-premium": {
+        "label": "Full Animation - Premium (Kling 3.0 Pro)",
+        "video_model": "kling-3.0-pro",
+        "animate_slides": "all",
+        "description": "Every slide animated with Kling 3.0 Pro. Best quality for viral content.",
+    },
+}
+
+# \U0001f3b5 Ambient SFX Library \U0001f3b5
+AMBIENT_SFX = {
+    "city": {"file": "city_ambient.mp3", "keywords": ["urban", "street", "city", "traffic", "building", "neon"]},
+    "nature": {"file": "nature_ambient.mp3", "keywords": ["forest", "tree", "river", "mountain", "field", "garden"]},
+    "ocean": {"file": "ocean_waves.mp3", "keywords": ["ocean", "sea", "water", "beach", "coast", "wave"]},
+    "rain": {"file": "rain_ambient.mp3", "keywords": ["rain", "storm", "thunder", "cloud", "dark sky"]},
+    "space": {"file": "space_ambient.mp3", "keywords": ["space", "planet", "star", "galaxy", "cosmic", "nebula", "orbit"]},
+    "wind": {"file": "wind_ambient.mp3", "keywords": ["wind", "desert", "dust", "cold", "snow", "ice", "frozen"]},
+    "fire": {"file": "fire_crackle.mp3", "keywords": ["fire", "flame", "burn", "lava", "volcano", "heat"]},
+    "tech": {"file": "tech_hum.mp3", "keywords": ["computer", "digital", "cyber", "robot", "machine", "AI", "code"]},
+    "crowd": {"file": "crowd_murmur.mp3", "keywords": ["crowd", "people", "market", "festival", "celebration"]},
+}
+
+# \U0001f3ad Transition SFX Library \U0001f3ad
+TRANSITION_SFX = {
+    "whoosh": "static/sfx/whoosh.wav",
+    "impact": "static/sfx/impact.wav",
+    "reveal": "static/sfx/reveal.wav",
+    "glitch": "static/sfx/glitch.wav",
+    "bass_drop": "static/sfx/bass_drop.wav",
+}
+
+
+def match_ambient_sfx(visual_prompt: str) -> str:
+    """Match a visual prompt to the best ambient SFX track."""
+    prompt_lower = visual_prompt.lower()
+    best_match = None
+    best_score = 0
+    for sfx_name, sfx_info in AMBIENT_SFX.items():
+        score = sum(1 for kw in sfx_info["keywords"] if kw in prompt_lower)
+        if score > best_score:
+            best_score = score
+            best_match = sfx_name
+    return best_match
+

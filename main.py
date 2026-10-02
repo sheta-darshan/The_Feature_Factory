@@ -10,10 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from ai_models import get_available_models_for_frontend, estimate_cost, IMAGE_MODELS, VIDEO_MODELS, TTS_PROVIDERS
+from ai_models import get_available_models_for_frontend, estimate_cost, IMAGE_MODELS, VIDEO_MODELS, TTS_PROVIDERS, ANIMATION_TIERS, match_ambient_sfx
 
-# Import our generator engine
+# Import our generator engine, metadata manager and job manager
 import generator
+import metadata_manager
+import job_manager
+from job_manager import get_voice_settings_for_style
 
 load_dotenv()
 
@@ -77,14 +80,9 @@ async def api_list_projects():
     for item in os.listdir(outputs_dir):
         item_path = os.path.join(outputs_dir, item)
         if os.path.isdir(item_path):
-            meta_path = os.path.join(item_path, "metadata.json")
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    projects.append(meta)
-                except Exception as e:
-                    print(f"Error reading metadata for {item}: {e}")
+            meta = metadata_manager.read_metadata(item)
+            if meta:
+                projects.append(meta)
                     
     projects.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
     return projects
@@ -120,6 +118,56 @@ async def api_daily_topic():
     except Exception as e:
         print(f"Error parsing calendar: {e}")
         return {"topic": "Imagine if space travel was as cheap as buying a bus ticket."}
+
+@app.get("/api/random-product-demo")
+async def api_random_product_demo():
+    """
+    Returns sample/demo product data for rapid testing and one-click frontend demo population.
+    """
+    demo_products = [
+        {
+            "niche": "Jewellery",
+            "product_title": "18K Solid Gold Peacock Pendant",
+            "brand": "Aura Fine Jewels",
+            "price": "$189",
+            "cta": "Shop 20% Off Today",
+            "visual_style": "Cinematic Photo"
+        },
+        {
+            "niche": "Clothing/Fashion",
+            "product_title": "Italian Linen Oversized Summer Shirt",
+            "brand": "Sartoria Studio",
+            "price": "$79",
+            "cta": "Order Before Stock Runs Out",
+            "visual_style": "Cinematic Photo"
+        },
+        {
+            "niche": "Cosmetics",
+            "product_title": "Hydra-Glow Botanical Facial Serum",
+            "brand": "Lumina Botanicals",
+            "price": "$45",
+            "cta": "Get Free Express Shipping",
+            "visual_style": "Cinematic Photo"
+        },
+        {
+            "niche": "Furniture/Home Decor",
+            "product_title": "Nordic Walnut Minimalist Desk Lamp",
+            "brand": "Klar Modern Living",
+            "price": "$129",
+            "cta": "Claim Your Design Discount",
+            "visual_style": "Cinematic Photo"
+        },
+        {
+            "niche": "Restaurants",
+            "product_title": "Artisanal Truffle Butter Brioche Burger",
+            "brand": "The Velvet Grill",
+            "price": "$22",
+            "cta": "Book Your Table Now",
+            "visual_style": "Cinematic Photo"
+        }
+    ]
+    import random
+    return random.choice(demo_products)
 
 @app.get("/api/trending-topics")
 async def api_trending_topics():
@@ -266,7 +314,8 @@ async def api_generate_script(req: ScriptRequest):
             visual_style=req.visual_style,
             voice=req.voice,
             aspect_ratio=req.aspectRatio,
-            caption_preset=req.captionPreset
+            caption_preset=req.captionPreset,
+            use_director_score=req.use_director_score
         )
         project_id = f"project_{int(time.time())}"
         # Ensure project output directory exists
@@ -292,6 +341,7 @@ async def api_generate_script(req: ScriptRequest):
             "brandTone": req.brand_tone,
             "assetType": req.asset_type,
             "enableAiVideo": req.enable_ai_video,
+            "animationTier": req.animationTier,
             "rawProductImages": [x.strip() for x in req.image_path.split(",") if x.strip()],
             "isolateBackground": req.isolate_background,
             "alternativeHooks": data.get("alternative_hooks", []),
@@ -305,6 +355,7 @@ async def api_generate_script(req: ScriptRequest):
             "voice": data.get("voice", req.voice),
             "captionPreset": data.get("captionPreset", req.captionPreset),
             "segments": data.get("segments", []),
+            "director_score": data.get("director_score"),
             "product_lock": None,
             "generation_logs": [
                 {
@@ -319,8 +370,7 @@ async def api_generate_script(req: ScriptRequest):
                 }
             ]
         }
-        with open(f"outputs/{project_id}/metadata.json", "w", encoding="utf-8") as f:
-            json.dump(metadata, f, indent=2)
+        metadata_manager.write_metadata(project_id, metadata)
             
         return {
             "projectId": project_id,
@@ -356,190 +406,13 @@ def get_voice_settings_for_style(visual_style: str):
 @app.post("/api/generate-assets")
 async def api_generate_assets(req: AssetRequest):
     """
-    Step 2: Generate all audio (edge-tts) and images (Replicate/Flux) concurrently.
+    Step 2 (Synchronous): Generate all audio (edge-tts) and images (Replicate/Flux) concurrently.
+    Calls shared engine implementation in job_manager.execute_asset_generation.
     """
-    project_id = req.projectId
-    project_dir = f"outputs/{project_id}"
-    os.makedirs(project_dir, exist_ok=True)
-    
-    # Update project metadata
-    meta_path = f"{project_dir}/metadata.json"
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-            meta["aspectRatio"] = req.aspectRatio
-            meta["status"] = "assets_generated"
-            meta["imageModel"] = req.imageModel
-            meta["segments"] = [
-                {
-                    "text_to_speak": seg.text_to_speak,
-                    "visual_prompt": seg.visual_prompt,
-                    "audio_path": seg.audio_path,
-                    "image_path": seg.image_path
-                }
-                for seg in req.segments
-            ]
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-        except Exception as e:
-            print(f"Error updating metadata during assets gen: {e}")
-            
-    # Load metadata and visual style
-    visual_style = "Cinematic Photo"
-    resolved_voice = "en-US-GuyNeural"
-    meta_path = f"{project_dir}/metadata.json"
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-            visual_style = meta.get("visualStyle", "Clean Commercial Photography")
-            resolved_voice = meta.get("voice", "en-US-GuyNeural")
-        except Exception:
-            pass
-            
-    # Resolve the voice parameter
-    voice_to_use = req.voice
-    if voice_to_use == "Auto" or not voice_to_use:
-        voice_to_use = resolved_voice
-    if voice_to_use == "Auto" or not voice_to_use:
-        voice_to_use = "en-US-GuyNeural"
-        
-    rate_str, pitch_str = get_voice_settings_for_style(visual_style)
-    
-    # Use a Semaphore of 1 to ensure images are generated sequentially
-    image_semaphore = asyncio.Semaphore(1)
-    
-    async def process_segment(index: int, seg: Segment):
-        audio_filename = f"audio_{index}.mp3"
-        audio_path = f"{project_dir}/{audio_filename}"
-        
-        image_filename = f"image_{index}" # extension added later
-        image_path_raw = f"{project_dir}/{image_filename}.webp"
-        
-        # 1. Generate Voiceover (async, completely parallel with style settings)
-        voiceover_task = generator.generate_voiceover(seg.text_to_speak, audio_path, voice=voice_to_use, rate=rate_str, pitch=pitch_str)
-        
-        # 2. Generate Visual Asset (queued sequentially using Semaphore)
-        async def run_image_task():
-            async with image_semaphore:
-                # Add a 10.0 second pause between generations to stay within Replicate's 6/min rate limit
-                await asyncio.sleep(10.0)
-                raw_imgs = meta.get("rawProductImages", [])
-                isolate_bg = meta.get("isolateBackground", True)
-                img_model_to_use = "schnell" if req.imageModel == "video" else req.imageModel
-                
-                # Pick slide-specific product angle if multiple uploaded
-                raw_img = ""
-                if raw_imgs and len(raw_imgs) > 0:
-                    raw_img = raw_imgs[index] if index < len(raw_imgs) else raw_imgs[0]
-                
-                # Slide 1 Color Integrity: If asset is a real model wearing clothes, use original photo directly for Slide 1
-                asset_type = meta.get("assetType", "standalone")
-                if index == 0 and asset_type == "model_worn" and raw_img and os.path.exists(raw_img):
-                    print(f"Slide 1 Model Integrity: Copying original model photo directly for Slide 1 -> {image_path_raw}")
-                    import shutil
-                    os.makedirs(os.path.dirname(image_path_raw), exist_ok=True)
-                    try:
-                        with Image.open(raw_img) as m_img:
-                            m_img.convert("RGB").save(image_path_raw, "JPEG", quality=90)
-                        return image_path_raw
-                    except Exception:
-                        shutil.copy2(raw_img, image_path_raw)
-                        return image_path_raw
-
-                if raw_img:
-                    return await asyncio.to_thread(
-                        generator.generate_product_image_replicate, 
-                        seg.visual_prompt, 
-                        raw_img,
-                        image_path_raw,
-                        req.aspectRatio,
-                        img_model_to_use,
-                        isolate_bg,
-                        meta.get("niche", "General Retail"),
-                        meta.get("visualStyle", "Auto")
-                    )
-                else:
-                    return await asyncio.to_thread(
-                        generator.generate_image_replicate, 
-                        seg.visual_prompt, 
-                        image_path_raw,
-                        req.aspectRatio,
-                        img_model_to_use
-                    )
-        
-        # Run concurrently
-        try:
-            actual_audio_path, actual_image_path = await asyncio.gather(voiceover_task, run_image_task())
-            return {
-                "text_to_speak": seg.text_to_speak,
-                "visual_prompt": seg.visual_prompt,
-                "audio_path": f"outputs/{project_id}/{os.path.basename(actual_audio_path)}",
-                "image_path": f"outputs/{project_id}/{os.path.basename(actual_image_path)}"
-            }
-        except Exception as e:
-            print(f"Error generating assets for segment {index}: {e}")
-            raise e
-
     try:
-        tasks = [process_segment(i, seg) for i, seg in enumerate(req.segments)]
-        results = await asyncio.gather(*tasks)
-        
-        # Update metadata with generated results, product lock, and audit logs
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                meta["segments"] = results
-                meta["status"] = "assets_generated"
-                
-                # Derive and store ProductLock if not already present
-                raw_imgs = meta.get("rawProductImages", [])
-                if raw_imgs and os.path.exists(raw_imgs[0]) and not meta.get("product_lock"):
-                    try:
-                        from PIL import Image
-                        from rembg import remove
-                        with Image.open(raw_imgs[0]).convert("RGBA") as r_img:
-                            t_img = remove(r_img)
-                            meta["product_lock"] = generator.derive_product_lock(t_img)
-                    except Exception as pl_err:
-                        print(f"Product lock derivation note: {pl_err}")
-                
-                logs = meta.get("generation_logs", [])
-                for i, r in enumerate(results):
-                    logs.append({
-                        "step_name": f"voiceover_{i}",
-                        "model": voice_to_use,
-                        "provider": req.ttsProvider,
-                        "prompt": r.get("text_to_speak", ""),
-                        "cost_estimate": 0.0,
-                        "output_path": r.get("audio_path", ""),
-                        "timestamp": int(time.time()),
-                        "status": "completed"
-                    })
-                    logs.append({
-                        "step_name": f"image_generation_{i}",
-                        "model": req.imageModel,
-                        "provider": "replicate",
-                        "prompt": r.get("visual_prompt", ""),
-                        "cost_estimate": 0.003 if "schnell" in req.imageModel else 0.05,
-                        "output_path": r.get("image_path", ""),
-                        "timestamp": int(time.time()),
-                        "status": "completed"
-                    })
-                meta["generation_logs"] = logs
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta, f, indent=2)
-            except Exception as me:
-                print(f"Error updating metadata logs: {me}")
-
-        return {
-            "projectId": project_id,
-            "segments": results
-        }
+        return await job_manager.execute_asset_generation(req.projectId, req)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate assets: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Asset generation failed: {str(e)}")
 
 @app.post("/api/regenerate-segment")
 async def api_regenerate_segment(req: RegenerateSegmentRequest):
@@ -559,18 +432,12 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
     # Load metadata and visual style for pitch/rate adjustments
     visual_style = "Cinematic Photo"
     resolved_voice = "en-US-GuyNeural"
-    meta_path = f"{project_dir}/metadata.json"
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-            meta["imageModel"] = req.imageModel
-            visual_style = meta.get("visualStyle", "Clean Commercial Photography")
-            resolved_voice = meta.get("voice", "en-US-GuyNeural")
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, indent=2)
-        except Exception:
-            pass
+    meta = metadata_manager.read_metadata(project_id)
+    if meta:
+        meta["imageModel"] = req.imageModel
+        visual_style = meta.get("visualStyle", "Clean Commercial Photography")
+        resolved_voice = meta.get("voice", "en-US-GuyNeural")
+        metadata_manager.update_metadata(project_id, {"imageModel": req.imageModel})
             
     # Resolve the voice parameter
     voice_to_use = req.voice
@@ -655,166 +522,11 @@ async def api_regenerate_segment(req: RegenerateSegmentRequest):
 @app.post("/api/render-video")
 async def api_render_video(req: RenderRequest):
     """
-    Step 3: Stitches all generated segment images and voice tracks into a final MP4 video.
+    Step 3 (Synchronous): Assemble video with MoviePy, burn subtitles, generate thumbnail.
+    Calls shared engine implementation in job_manager.execute_video_render.
     """
-    project_id = req.projectId
-    project_dir = f"outputs/{project_id}"
-    output_video_path = f"{project_dir}/final_video.mp4"
-    
-    # Map the relative URLs back to absolute local paths
-    processed_segments = []
-    for seg in req.segments:
-        local_img = seg.image_path.replace("outputs/", f"outputs/")
-        local_audio = seg.audio_path.replace("outputs/", f"outputs/")
-        
-        processed_segments.append({
-            "image_path": local_img,
-            "audio_path": local_audio
-        })
-        
-    # Resolve the aspect ratio and caption preset parameters
-    aspect_ratio_to_use = req.aspectRatio
-    caption_preset_to_use = req.captionPreset
-    
-    meta_path = f"{project_dir}/metadata.json"
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-            if aspect_ratio_to_use == "Auto" or not aspect_ratio_to_use:
-                aspect_ratio_to_use = meta.get("aspectRatio", "16:9")
-            if caption_preset_to_use == "Auto" or not caption_preset_to_use:
-                caption_preset_to_use = meta.get("captionPreset", "default")
-        except Exception:
-            pass
-            
-    if aspect_ratio_to_use == "Auto" or not aspect_ratio_to_use:
-        aspect_ratio_to_use = "16:9"
-    if caption_preset_to_use == "Auto" or not caption_preset_to_use:
-        caption_preset_to_use = "default"
-        
-    # Bug #10 Fix: Initialize meta dict before usage
-    meta = {}
-    meta_path_init = f"{project_dir}/metadata.json"
-    if os.path.exists(meta_path_init):
-        try:
-            with open(meta_path_init, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        except Exception:
-            pass
-    
-    bg_music_path = None
-    if req.musicTrack:
-        if req.musicTrack in ["Auto-Select", "auto", "Auto"]:
-            # Auto-detect visual style from metadata
-            visual_style = "Cinematic Photo"
-            meta_path = f"{project_dir}/metadata.json"
-            if os.path.exists(meta_path):
-                try:
-                    with open(meta_path, "r", encoding="utf-8") as f:
-                        meta = json.load(f)
-                    visual_style = meta.get("visualStyle", "Clean Commercial Photography")
-                except Exception:
-                    pass
-            # Map visual style to corresponding BGM
-            style_music_mapping = {
-                "Cyberpunk": "synthwave_beat.mp3",
-                "Retro Anime": "ambient_dream.mp3",
-                "Dark Sci-Fi / Fantasy": "ambient_space.mp3",
-                "Steampunk Oil Painting": "ambient_dream.mp3",
-                "Cinematic Photo": "ambient_dream.mp3",
-                "Storybook Sketch Art": "ambient_dream.mp3",
-                "Cosmic Synthwave / Hologram": "synthwave_beat.mp3",
-                "Traditional Ink Wash (Sumi-e)": "ambient_dream.mp3",
-                "Claymation / Stop-Motion": "ambient_dream.mp3",
-                "Comic Book Noir": "synthwave_beat.mp3"
-            }
-            mapped_track = style_music_mapping.get(visual_style, "ambient_dream.mp3")
-            bg_music_path = f"static/music/{mapped_track}"
-            print(f"Auto-selected BGM '{mapped_track}' for style '{visual_style}'")
-        else:
-            bg_music_path = f"static/music/{req.musicTrack}"
-        
     try:
-        # Assemble using moviepy
-        video_path = await asyncio.to_thread(
-            generator.assemble_video,
-            processed_segments,
-            output_video_path,
-            aspect_ratio_to_use,
-            bg_music_path if not req.noSound else None,
-            req.fontName,
-            req.highlightColor,
-            req.captionPosition,
-            req.addWatermark or bool(meta.get("brand")),
-            caption_preset_to_use,
-            req.noSound,
-            meta.get("brand", ""),
-            meta.get("price", ""),
-            meta.get("cta", ""),
-            meta.get("niche", "")
-        )
-        
-        # Update project metadata and generate thumbnail
-        meta_path = f"{project_dir}/metadata.json"
-        thumbnail_url = ""
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                
-                # Fetch brainstormed thumbnail parameters
-                thumb_prompt = meta.get("thumbnail_prompt", "")
-                thumb_text = meta.get("thumbnail_text", "")
-                
-                # Fallbacks if metadata keys aren't set
-                if not thumb_prompt:
-                    thumb_prompt = f"YouTube video thumbnail for scenario: {meta.get('thought', 'Imagine if')}, high-contrast cinematic, epic perspective"
-                if not thumb_text:
-                    thumb_text = meta.get("title", "IMAGINE IF!")[:20]
-                
-                # Generate thumbnail matching the project's layout format with true product fidelity
-                aspect_ratio = meta.get("aspectRatio", "16:9")
-                raw_imgs = meta.get("rawProductImages", [])
-                raw_img_path = raw_imgs[0] if raw_imgs and os.path.exists(raw_imgs[0]) else None
-                await asyncio.to_thread(
-                    generator.generate_thumbnail,
-                    project_id,
-                    thumb_prompt,
-                    thumb_text,
-                    aspect_ratio,
-                    raw_img_path,
-                    meta.get("niche", "General Retail"),
-                    meta.get("visualStyle", "Auto")
-                )
-                thumbnail_url = f"outputs/{project_id}/thumbnail.jpg"
-                
-                meta["status"] = "rendered"
-                meta["videoUrl"] = f"outputs/{project_id}/final_video.mp4"
-                meta["thumbnailUrl"] = thumbnail_url
-                
-                logs = meta.get("generation_logs", [])
-                logs.append({
-                    "step_name": "video_assembly",
-                    "model": "moviepy",
-                    "provider": "local",
-                    "cost_estimate": 0.0,
-                    "output_path": f"outputs/{project_id}/final_video.mp4",
-                    "timestamp": int(time.time()),
-                    "status": "completed"
-                })
-                meta["generation_logs"] = logs
-                
-                with open(meta_path, "w", encoding="utf-8") as f:
-                    json.dump(meta, f, indent=2)
-            except Exception as e:
-                print(f"Error updating metadata or generating thumbnail: {e}")
-                
-        return {
-            "projectId": project_id,
-            "video_url": f"outputs/{project_id}/final_video.mp4",
-            "thumbnail_url": thumbnail_url
-        }
+        return await job_manager.execute_video_render(req.projectId, req)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to render video: {str(e)}")
 
@@ -874,14 +586,7 @@ async def download_campaign_bundle(project_id: str):
     if not os.path.exists(project_dir):
         raise HTTPException(status_code=404, detail="Project not found")
         
-    meta_path = os.path.join(project_dir, "metadata.json")
-    meta = {}
-    if os.path.exists(meta_path):
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-        except Exception:
-            pass
+    meta = metadata_manager.read_metadata(project_id)
 
     brand = meta.get("brand", "").replace(" ", "_") or "Brand"
     product_title = meta.get("productTitle", "").replace(" ", "_") or "Product"
@@ -972,6 +677,70 @@ async def api_estimate_cost(req: dict):
         num_slides=req.get("numSlides", 3),
         char_count=req.get("charCount", 300),
     )
+
+
+# ---------------------------------------------------------------------------
+# Asynchronous Job Queue Endpoints (Task C Part 2)
+# ---------------------------------------------------------------------------
+import job_manager
+
+@app.post("/api/jobs/assets", status_code=202)
+async def api_jobs_assets(req: AssetRequest):
+    """
+    Submits an asynchronous background job for generating voiceovers and visual assets.
+    Returns immediately with a job_id for status polling.
+    """
+    job = job_manager.submit_assets_job(req.projectId, req.model_dump())
+    return job
+
+
+@app.post("/api/jobs/render", status_code=202)
+async def api_jobs_render(req: RenderRequest):
+    """
+    Submits an asynchronous background job for assembling the video and rendering thumbnail.
+    Returns immediately with a job_id for status polling.
+    """
+    job = job_manager.submit_render_job(req.projectId, req.model_dump())
+    return job
+
+
+@app.post("/api/jobs/full-pipeline", status_code=202)
+async def api_jobs_full_pipeline(req: dict):
+    """
+    Submits an asynchronous background job to run the complete pipeline (assets -> render).
+    """
+    project_id = req.get("projectId") or req.get("project_id")
+    if not project_id:
+        raise HTTPException(status_code=400, detail="projectId is required")
+    job = job_manager.submit_full_pipeline_job(project_id, req)
+    return job
+
+
+@app.get("/api/jobs/{job_id}/status")
+async def api_jobs_status(job_id: str):
+    """
+    Polls the progress and result of an asynchronous job.
+    """
+    job = job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.get("/api/jobs")
+async def api_list_jobs(limit: int = 50):
+    """
+    Lists recent asynchronous background jobs.
+    """
+    return {"jobs": job_manager.list_jobs(limit=limit)}
+
+
+
+
+@app.get("/api/animation-tiers")
+async def api_animation_tiers():
+    """Returns available animation quality tiers for the frontend."""
+    return {k: {"label": v["label"], "description": v["description"]} for k, v in ANIMATION_TIERS.items()}
 
 if __name__ == "__main__":
     import uvicorn

@@ -25,11 +25,34 @@ REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
 if REPLICATE_API_TOKEN:
     os.environ["REPLICATE_API_TOKEN"] = REPLICATE_API_TOKEN
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_FONT_PATH = os.path.join(PROJECT_ROOT, "static", "fonts", "Outfit-Bold.ttf")
+
+def get_font(size: int = 32, font_path: str = None) -> ImageFont.ImageFont:
+    """
+    Safely loads a TrueType font with cross-platform fallbacks (Linux, macOS, Windows, containers).
+    1. Checks specified font_path if given and exists.
+    2. Falls back to bundled static/fonts/Outfit-Bold.ttf.
+    3. Falls back gracefully to ImageFont.load_default().
+    """
+    if font_path and os.path.exists(font_path):
+        try:
+            return ImageFont.truetype(font_path, size)
+        except Exception:
+            pass
+    if os.path.exists(DEFAULT_FONT_PATH):
+        try:
+            return ImageFont.truetype(DEFAULT_FONT_PATH, size)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+
 
 def sanitize_visual_prompt(prompt: str) -> str:
     """
-    Strips accidental text/typography directives from visual prompts
-    so diffusion models only generate clean physical environments.
+    Strips accidental text/typography directives, product purity numbers, and branding
+    from visual prompts so diffusion models only generate clean physical environments.
     """
     import re
     cleaned = prompt
@@ -43,11 +66,13 @@ def sanitize_visual_prompt(prompt: str) -> str:
         r"(?:animation\s+of\s+a\s+)?['\"][^'\"]*['\"]\s+button\s+appearing",
         r"(?:DM|order|buy|click|shop|save|discount|sale)\s+now[!.]?",
         r"['\"][^'\"]{1,30}['\"]",  # Remove any short quoted text snippets intended for render
+        r"\b\d{1,4}(?:\.\d+)?\b",   # Strip numeric purity marks/ratings like 92.7, 925, 1499 that trigger text hallucination
     ]
     for p in patterns:
         cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(",. ")
     return cleaned
+
 
 
 def derive_product_lock(transparent_img: Image.Image) -> dict:
@@ -98,7 +123,7 @@ def derive_product_lock(transparent_img: Image.Image) -> dict:
     }
 
 
-async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto") -> dict:
+async def generate_product_campaign(niche: str, product_title: str, brand: str = "", price: str = "", cta: str = "", duration_seconds: int = 30, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "9:16", caption_preset: str = "Auto", use_director_score: bool = False) -> dict:
     """
     Sends the product details to Gemini to generate high-converting marketing copy and lifestyle prompts.
     """
@@ -196,10 +221,52 @@ async def generate_product_campaign(niche: str, product_title: str, brand: str =
                 
     try:
         data = json.loads(response.text)
+        default_motions = ["slow_zoom_in", "pan_left", "zoom_out", "pan_right"]
+        
+        if use_director_score:
+            # Enrich segments with director score (camera movements, transitions, scene pacing)
+            try:
+                from director import generate_director_score
+                director_score = await generate_director_score(
+                    product_name=product_title,
+                    brand=brand,
+                    niche=niche,
+                    visual_style=visual_style,
+                    num_slides=len(data.get("segments", [])),
+                    price=price,
+                    cta=cta,
+                    duration=duration_seconds
+                )
+                scenes = director_score.get("scenes", [])
+                for idx, seg in enumerate(data.get("segments", [])):
+                    if idx < len(scenes):
+                        scene = scenes[idx]
+                        seg["camera_movement"] = scene.get("camera_movement", "slow_zoom_in")
+                        seg["transition_to_next"] = scene.get("transition_to_next", "cross_dissolve")
+                        seg["scene_type"] = scene.get("type", "lifestyle")
+                    else:
+                        seg["camera_movement"] = default_motions[idx % len(default_motions)]
+                        seg["transition_to_next"] = "cross_dissolve"
+                        seg["scene_type"] = "lifestyle"
+                data["director_score"] = director_score
+            except Exception as dir_err:
+                print(f"Warning: Director score enrichment failed ({dir_err}). Continuing with default motion settings.")
+                for idx, seg in enumerate(data.get("segments", [])):
+                    seg["camera_movement"] = default_motions[idx % len(default_motions)]
+                    seg["transition_to_next"] = "cross_dissolve"
+                    seg["scene_type"] = "lifestyle"
+        else:
+            # Director scoring skipped via user toggle: assign standard default motions
+            for idx, seg in enumerate(data.get("segments", [])):
+                seg["camera_movement"] = default_motions[idx % len(default_motions)]
+                seg["transition_to_next"] = "cross_dissolve"
+                seg["scene_type"] = "lifestyle"
+
         return data
     except Exception as e:
         print(f"Error parsing Gemini response: {e}")
         raise e
+
 
 async def generate_script(thought: str, duration_seconds: int = 60, visual_style: str = "Auto", voice: str = "Auto", aspect_ratio: str = "Auto", caption_preset: str = "Auto") -> dict:
     """
@@ -220,19 +287,45 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
     You are an expert cinematic director, speculative storyteller, and high-retention short-form video scriptwriter.
     Break down the following thought/topic into a sequence of short video segments.
     
-    CRITICAL HIGH-RETENTION STORYTELLING GUIDELINES:
-    1. Hook (Segment 1 - 0 to 5s): Start "in media res" (in the middle of the action) with a scroll-stopping statement or paradox.
-       - BANNED CLICHÉS: Never start with "Have you ever wondered...", "Imagine a world...", "What if...", "In this video...", or greeting the audience.
-       - Good Hook Example: "Tomorrow morning, every computer on Earth shuts down... permanently."
-    2. Stakes / Promise (Segment 2 - 5 to 10s): Establish the global stakes or rules of this speculative scenario immediately.
-    3. Sensory, Punchy & Simple Conversational Narrations:
-       - Keep sentences short, active, and direct. Break up long ideas.
-       - BANNED VOCABULARY: Do not use complex, obscure, academic, or rare words (e.g. "exodus", "atrophy", "paradigm", "depletion", "stratification", "volatility", "resonance", "apartheid", "superposition").
-       - Reading Level: Spoken narration must be written at a 4th-grade (approx. 10-year-old child) reading level. Use common conversational English.
-       - Use highly visual sensory vocabulary (e.g. "cold shadow", "deep hum", "rusty metal", "bitter wind") to describe feelings and sights.
-       - Use ellipses `...` or em-dashes `—` to force dramatic voiceover pauses in the Edge-TTS synthesis.
-    4. Cliffhanger Loops: Every segment except the final one must end with a brief cliffhanger that forces the viewer into the next segment.
-    5. The Polarizing Payoff (Final Segment): Deliver a final punchy takeaway and a polarizing dilemma/question to drive comment section debates.
+    CRITICAL 4-BEAT HIGH-RETENTION STORYTELLING FRAMEWORK:
+    
+    BEAT 1 - THE HOOK (Segment 1, 0-3s):
+    - Start "in media res" — drop the viewer directly into the most intense, bizarre, or shocking moment.
+    - Use a PATTERN INTERRUPT: a paradox, impossible claim, or startling visual.
+    - BANNED OPENINGS: "Have you ever wondered...", "Imagine a world...", "What if...", "In this video...", "Hey guys", "Today we're going to..."
+    - GOOD HOOKS: "Tomorrow morning, every phone on Earth goes dead.", "The last person on Earth just heard a knock on the door.", "Scientists found something 2 miles under Antarctica... and it's alive."
+    - The hook MUST create an unanswered question that FORCES the viewer to keep watching.
+    
+    BEAT 2 - THE STAKES (Segment 2, 3-10s):
+    - Immediately escalate the tension. Explain the RULES of this world/scenario.
+    - Show what's at stake: lives, society, relationships, identity.
+    - End this beat with a MINI-CLIFFHANGER: "But here's the part nobody expected..."
+    
+    BEAT 3 - THE PAYOFF (Segment 3+, 10-25s):
+    - Deliver the core revelation, twist, or consequence.
+    - Use SENSORY LANGUAGE: "cold shadow", "deep hum", "bitter wind", "rusty metal", "warm glow".
+    - Show the human impact — how does this affect a normal person's day?
+    
+    BEAT 4 - THE LOOP / POLARIZE (Final Segment, last 5s):
+    - Choose ONE of these engagement strategies:
+      a) SEAMLESS LOOP: Make the final sentence/visual connect back to the opening, encouraging rewatches.
+      b) POLARIZING DILEMMA: End with a forced-choice question that drives comments. "Would you choose unlimited money... or perfect health? Comment below."
+      c) SERIES CLIFFHANGER: "But that's not even the scariest part... Part 2 drops tomorrow."
+    - NEVER end with a generic "thanks for watching" or "like and subscribe".
+    
+    NARRATION STYLE RULES:
+    - Keep sentences SHORT. Max 8-10 words per sentence. Break up long ideas.
+    - BANNED VOCABULARY: Never use academic/rare words (exodus, atrophy, paradigm, depletion, stratification, volatility, resonance, superposition, dichotomy, epistemological).
+    - Reading Level: 4th-grade (10-year-old) conversational English.
+    - Use ellipses "..." and em-dashes " - " to create dramatic voiceover pauses.
+    - Every sentence must either REVEAL information, ESCALATE tension, or PROVOKE emotion.
+    - NO filler sentences. NO transitions like "Moving on..." or "Now let's talk about..."
+    
+    VISUAL PROMPT RULES FOR ANIMATED STORYTELLING:
+    - Each visual_prompt must include a CAMERA DIRECTION: "slow push-in", "dramatic pull-out", "orbiting shot", "low-angle looking up", "birds-eye view descending".
+    - Include MOTION ELEMENTS: "smoke curling", "leaves drifting", "water rippling", "crowds moving", "lights flickering".
+    - Include ATMOSPHERE: "golden hour light", "harsh neon glow", "moonlit shadows", "foggy morning haze".
+    - The visual must tell a MICRO-STORY on its own — even without narration, the image should be captivating.
     
     Thought/Topic: {thought}
     
@@ -297,10 +390,15 @@ async def generate_script(thought: str, duration_seconds: int = 60, visual_style
       "captionPreset": "the selected caption preset style",
       "thumbnail_prompt": "An expanded, highly detailed cinematic visual prompt matching the selected visual style for generating a click-worthy YouTube thumbnail.",
       "thumbnail_text": "A short, extremely punchy, high-curiosity 3 to 4 word phrase to overlay on the thumbnail.",
+      "alternative_hooks": ["3 different scroll-stopping hook sentences for A/B testing. Each must use a different psychological trigger: curiosity gap, fear/urgency, or social proof."],
+      "engagement_strategy": "One of: seamless_loop, polarizing_dilemma, series_cliffhanger",
+      "series_part": null,
       "segments": [
          {{
            "text_to_speak": "spoken narration text for this segment, written in simple, dramatic English with pauses",
-           "visual_prompt": "An expanded, highly detailed visual prompt matching the chosen visual style. Include dynamic camera movements or environmental motion."
+           "visual_prompt": "An expanded, highly detailed visual prompt matching the chosen visual style. Include dynamic camera movements or environmental motion.",
+           "motion_prompt": "A short camera/motion direction for AI video animation, e.g. 'Slow cinematic push-in with dust particles floating' or 'Dramatic pull-out revealing the full landscape'. Keep under 20 words.",
+           "beat_type": "One of: hook, stakes, payoff, loop"
          }}
       ]
     """
@@ -374,6 +472,16 @@ async def brainstorm_trending_topics() -> list:
         
     prompt = """
     Search the web for the most significant current global trends, debates, discoveries, events, cultural shifts, economic developments, environmental changes, psychological discussions, historical anniversaries, entertainment phenomena, and technological breakthroughs.
+    
+    VIRAL TOPIC FRAMEWORKS - Use these proven formats to transform trends into click-worthy stories:
+    - "What if [X] suddenly [impossible change]?" (Curiosity gap)
+    - "Scientists just found [discovery] and it changes everything" (Authority + novelty)
+    - "Nobody told you this about [common thing]" (FOMO / secret knowledge)
+    - "This [country/company] just [surprising action]" (Geo-curiosity)
+    - "You can only choose one: [A] or [B]" (Comment bait / forced dilemma)
+    - "In [near future year], [scary/exciting prediction]" (Future anxiety/excitement)
+    - "[Familiar thing] was actually [shocking truth]" (Revelation / myth-busting)
+    - "The last time this happened was [historic event]" (Historical parallel)
     
     You must construct exactly 5 highly compelling speculative "What If" storytelling ideas based on these real-world trends, following a strict two-step pipeline:
     
@@ -673,30 +781,6 @@ def generate_image_pollinations(prompt: str, output_path: str, aspect_ratio: str
         print(f"Warning converting fallback image: {e}")
         return output_path
 
-def sanitize_visual_prompt(prompt: str) -> str:
-    """
-    Strips accidental text/typography directives, product purity numbers, and branding
-    from visual prompts so diffusion models only generate clean physical environments.
-    """
-    import re
-    cleaned = prompt
-    patterns = [
-        r"split-screen\s+view\.?\s*(?:On\s+one\s+side,?)?",
-        r"On\s+the\s+other\s+side,?\s*[^.]*\.",
-        r"(?:with\s+)?(?:the\s+)?['\"][^'\"]*['\"]\s+brand\s+logo[^.]*\.",
-        r"brand\s+logo\s+is\s+subtly\s+embossed[^.]*\.",
-        r"(?:with\s+)?(?:text|words|typography|logo|banner|button)\s+overlay[^.]*\.",
-        r"(?:text|words|letters|typography|logo|banner|button)\s+(?:saying|reading|displaying|showing|written)?\s*['\"][^'\"]*['\"]",
-        r"(?:animation\s+of\s+a\s+)?['\"][^'\"]*['\"]\s+button\s+appearing",
-        r"(?:DM|order|buy|click|shop|save|discount|sale)\s+now[!.]?",
-        r"['\"][^'\"]{1,30}['\"]",  # Remove any short quoted text snippets
-        r"\b\d{1,4}(?:\.\d+)?\b",   # Strip numeric purity marks/ratings like 92.7, 925, 1499 that trigger text hallucination
-    ]
-    for p in patterns:
-        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(",. ")
-    return cleaned
-
 
 def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
@@ -730,6 +814,64 @@ def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail", visu
     no_text_clause = "clean blank background surfaces, smooth unblemished marble and pedestal without writing or plaques, absolutely no text, no numbers, no words, no signs, no logos, no typography, no watermarks, no inscriptions, no engravings, no labels, no etched letters"
     return f"{sanitized}, {env_tokens}, {no_text_clause}"
 
+
+
+
+async def generate_voiceover_elevenlabs(text: str, output_path: str, voice: str = "Rachel") -> str:
+    """
+    Generate voiceover using ElevenLabs API for premium emotional narration.
+    Falls back to Edge TTS if API key is not configured.
+    """
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    if not api_key:
+        print("ELEVENLABS_API_KEY not configured. Falling back to Edge TTS.")
+        return await generate_voiceover(text, output_path)
+    
+    # ElevenLabs voice ID mapping
+    voice_ids = {
+        "Rachel": "21m00Tcm4TlvDq8ikWAM",
+        "Adam": "pNInz6obpgDQGcFmaJgB",
+        "Bella": "EXAVITQu4vr4xnSDxMaL",
+        "Antoni": "ErXwobaYiN019PkySvjV",
+        "Domi": "AZnzlk1XvdvUeBnXmlld",
+        "Elli": "MF3mGyEYCl7XYWbV9V6O",
+    }
+    
+    voice_id = voice_ids.get(voice, voice_ids["Rachel"])
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client_http:
+            response = await client_http.post(
+                f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+                headers={
+                    "xi-api-key": api_key,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "text": text,
+                    "model_id": "eleven_multilingual_v2",
+                    "voice_settings": {
+                        "stability": 0.5,
+                        "similarity_boost": 0.75,
+                        "style": 0.4,
+                        "use_speaker_boost": True,
+                    },
+                },
+            )
+            
+            if response.status_code == 200:
+                with open(output_path, "wb") as f:
+                    f.write(response.content)
+                print(f"ElevenLabs voiceover generated: {output_path}")
+                return output_path
+            else:
+                print(f"ElevenLabs API error ({response.status_code}): {response.text[:200]}")
+                print("Falling back to Edge TTS.")
+                return await generate_voiceover(text, output_path)
+                
+    except Exception as e:
+        print(f"ElevenLabs voiceover failed ({e}). Falling back to Edge TTS.")
+        return await generate_voiceover(text, output_path)
 
 def generate_product_image_replicate(prompt: str, raw_image_path: str, output_path: str, aspect_ratio: str = "9:16", image_model: str = "schnell", isolate_background: bool = True, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
@@ -1138,6 +1280,79 @@ def animate_image_replicate(image_path: str, prompt: str, output_path: str, aspe
         print(f"Replicate video processing failed ({e}). Falling back to static panning.")
         return image_path
 
+
+
+def animate_image_fal(image_path: str, prompt: str, output_path: str, video_model: str = "kling-3.0-pro") -> str:
+    """
+    Animates a still image using fal.ai's Kling 3.0 Pro or MiniMax H3 video models.
+    Returns the path to the generated .mp4 file, or falls back to static image on failure.
+    """
+    try:
+        import fal_client
+    except ImportError:
+        print("fal-client not installed. Run: pip install fal-client. Falling back to Replicate.")
+        return animate_image_replicate(image_path, prompt, output_path, video_model=video_model)
+    
+    fal_key = os.getenv("FAL_KEY")
+    if not fal_key:
+        print("FAL_KEY not configured. Falling back to Replicate animation.")
+        return animate_image_replicate(image_path, prompt, output_path, video_model=video_model)
+    
+    if not os.path.exists(image_path):
+        print(f"Error: Image '{image_path}' not found for fal.ai animation.")
+        return image_path
+    
+    # Resolve fal.ai model endpoint
+    vid_info = VIDEO_MODELS.get(video_model, {})
+    fal_endpoint = vid_info.get("model_id", "kling-video/v3/image-to-video")
+    
+    motion_prompt = f"{prompt}, cinematic motion, dramatic lighting, smooth camera movement"
+    
+    try:
+        # Upload image to fal.ai
+        image_url = fal_client.upload_file(image_path)
+        
+        # Submit video generation
+        handler = fal_client.submit(
+            fal_endpoint,
+            arguments={
+                "start_image_url": image_url,
+                "prompt": motion_prompt,
+                "generate_audio": False,
+            },
+        )
+        
+        result = handler.get()
+        
+        # Extract video URL from result
+        video_url = None
+        if isinstance(result, dict):
+            if "video" in result:
+                video_url = result["video"].get("url") if isinstance(result["video"], dict) else str(result["video"])
+            elif "output" in result:
+                video_url = result["output"] if isinstance(result["output"], str) else result["output"][0]
+        
+        if not video_url:
+            print(f"fal.ai returned no video URL. Result: {result}")
+            return image_path
+        
+        # Download the video
+        import httpx
+        response = httpx.get(video_url, timeout=60.0)
+        if response.status_code != 200:
+            raise RuntimeError(f"Failed to download fal.ai video: HTTP {response.status_code}")
+        
+        mp4_path = os.path.splitext(output_path)[0] + "_animated.mp4"
+        with open(mp4_path, "wb") as f:
+            f.write(response.content)
+        
+        print(f"Successfully generated fal.ai animated clip ({video_model}): {mp4_path}")
+        return mp4_path
+        
+    except Exception as e:
+        print(f"fal.ai animation failed ({e}). Falling back to Replicate.")
+        return animate_image_replicate(image_path, prompt, output_path, video_model=video_model)
+
 def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_ratio: str = "16:9", raw_image_path: str = None, niche: str = "General Retail", visual_style: str = "Auto") -> str:
     """
     Generates a promotional thumbnail for the project.
@@ -1195,15 +1410,9 @@ def generate_thumbnail(project_id: str, prompt: str, text_overlay: str, aspect_r
     clean_text = text_overlay.upper().strip()
     
     if clean_text:
-        # Load heavy font (Impact is standard for YouTube thumbnails)
-        font_path = "C:\\Windows\\Fonts\\impact.ttf"
-        try:
-            # High-resolution font size for thumbnail (e.g. size 90 for 16:9, 65 for 9:16)
-            font_size = 90 if aspect_ratio == "16:9" else 65
-            font = ImageFont.truetype(font_path, font_size)
-        except Exception:
-            font = ImageFont.load_default()
-            font_size = 32
+        # High-resolution font size for thumbnail (e.g. size 90 for 16:9, 65 for 9:16)
+        font_size = 90 if aspect_ratio == "16:9" else 65
+        font = get_font(font_size)
             
         # Draw on a separate layer to allow rotation
         text_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -1322,21 +1531,21 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
         p = min(1.0, max(0.0, t / max(duration, 0.1)))
         
         # Gentle, subtle commercial movement (5-6% max delta) to preserve product framing
-        if motion_type == "zoom_in":
+        if motion_type in ["zoom_in", "slow_zoom_in", "dolly_forward"]:
             s = 1.0 - 0.05 * p
             w = crop_w * s
             h = crop_h * s
             x0 = center_x - w / 2.0
             y0 = center_y - h / 2.0
             
-        elif motion_type == "zoom_out":
+        elif motion_type in ["zoom_out", "dolly_backward"]:
             s = 0.95 + 0.05 * p
             w = crop_w * s
             h = crop_h * s
             x0 = center_x - w / 2.0
             y0 = center_y - h / 2.0
             
-        elif motion_type == "pan_left":
+        elif motion_type in ["pan_left", "orbit_left"]:
             w = crop_w * 0.96
             h = crop_h * 0.96
             span_x = img_w - w
@@ -1344,15 +1553,23 @@ def create_ken_burns_clip(image_path: str, duration: float, target_size=(1920, 1
             x0 = curr_center_x - w / 2.0
             y0 = center_y - h / 2.0
             
-        elif motion_type == "pan_right":
+        elif motion_type in ["pan_right", "orbit_right"]:
             w = crop_w * 0.96
             h = crop_h * 0.96
             span_x = img_w - w
             curr_center_x = (w / 2.0) + p * span_x if span_x > 0 else center_x
             x0 = curr_center_x - w / 2.0
             y0 = center_y - h / 2.0
+
+        elif motion_type in ["tilt_up", "pan_up"]:
+            w = crop_w * 0.96
+            h = crop_h * 0.96
+            span_y = img_h - h
+            curr_center_y = (img_h - h / 2.0) - p * span_y if span_y > 0 else center_y
+            x0 = center_x - w / 2.0
+            y0 = curr_center_y - h / 2.0
             
-        else:
+        else:  # static_hero, static
             w = crop_w
             h = crop_h
             x0 = center_x - w / 2.0
@@ -1380,11 +1597,7 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
     # 1. Watermark
     if add_watermark:
         watermark_text = f"@{brand.replace(' ', '')}" if brand else "@TheFeatureFactoryOfficial"
-        watermark_font_path = "C:\\Windows\\Fonts\\arial.ttf"
-        try:
-            watermark_font = ImageFont.truetype(watermark_font_path, 26 if target_size[0] < 1200 else 22)
-        except Exception:
-            watermark_font = ImageFont.load_default()
+        watermark_font = get_font(26 if target_size[0] < 1200 else 22)
         
         w_w = draw.textlength(watermark_text, font=watermark_font)
         x_watermark = target_size[0] - w_w - 30
@@ -1411,11 +1624,7 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
         badge_text = " • ".join(badge_parts) if badge_parts else ""
         
         if badge_text:
-            badge_font_path = "C:\\Windows\\Fonts\\arialbd.ttf"
-            try:
-                badge_font = ImageFont.truetype(badge_font_path, 26 if target_size[0] < 1200 else 28)
-            except Exception:
-                badge_font = ImageFont.load_default()
+            badge_font = get_font(26 if target_size[0] < 1200 else 28)
             
             txt_w = draw.textlength(badge_text, font=badge_font)
             card_w = min(int(txt_w + 60), target_size[0] - 60)
@@ -1494,26 +1703,8 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
 
     display_words = active_chunk if active_chunk else words[:min(3, len(words))]
     
-    font_paths = {
-        "Arial Bold": "C:\\Windows\\Fonts\\arialbd.ttf",
-        "Impact": "C:\\Windows\\Fonts\\impact.ttf",
-        "Courier Bold": "C:\\Windows\\Fonts\\courbd.ttf",
-        "Times Bold": "C:\\Windows\\Fonts\\timesbd.ttf"
-    }
-    
-    if caption_preset in ["mrbeast", "hormozi"]:
-        font_name = "Impact"
-    elif caption_preset == "cyberpunk":
-        font_name = "Courier Bold"
-    else:
-        font_name = "Arial Bold"
-        
-    font_file = font_paths.get(font_name, font_paths["Arial Bold"])
     font_size = 54 if target_size[0] < 1200 else 46
-    try:
-        font = ImageFont.truetype(font_file, font_size)
-    except Exception:
-        font = ImageFont.load_default()
+    font = get_font(font_size)
         
     color_map = {
         "Yellow": (255, 255, 0),
@@ -1544,17 +1735,14 @@ def draw_text_on_frame(frame, t, words, target_size, font_name="Arial Bold", hig
             if caption_preset in ["mrbeast", "hormozi"]:
                 scale = 1.25
         
-        try:
-            word_font = ImageFont.truetype(font_file, int(font_size * scale)) if scale != 1.0 else font
-        except Exception:
-            word_font = font
-            
+        word_font = get_font(int(font_size * scale)) if scale != 1.0 else font
+        
         display_text = w_text.upper() if caption_preset in ["mrbeast", "hormozi", "tiktok"] else w_text
         w_width = draw.textlength(display_text, font=word_font)
         
         if is_active:
             if caption_preset in ["mrbeast", "hormozi"]:
-                word_color = (255, 255, 0) if (active_word_idx % 2 == 0) else (57, 255, 20)
+                word_color = (255, 255, 0) if (active_word_idx_in_words % 2 == 0) else (57, 255, 20)
             elif caption_preset == "tiktok":
                 word_color = (255, 215, 0)
             elif caption_preset == "cyberpunk":
@@ -1636,6 +1824,19 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         bg_music_path = None
         print("[No-Sound Mode] Voiceover and BGM disabled.")
     
+    # Normalize segments to dicts
+    norm_segments = []
+    for s in (segments or []):
+        if hasattr(s, "model_dump"):
+            norm_segments.append(s.model_dump())
+        elif hasattr(s, "dict"):
+            norm_segments.append(s.dict())
+        elif isinstance(s, dict):
+            norm_segments.append(s)
+        else:
+            norm_segments.append(dict(s))
+    segments = norm_segments
+
     target_size = (1920, 1080) if aspect_ratio == "16:9" else (1080, 1920)
     video_clips = []
     audio_clips = []
@@ -1693,8 +1894,32 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             print(f"Warning: Visual asset missing for segment {i} ({img_path}). Using fallback slate canvas.")
             img_path = None
             
-        motion_style = motion_types[i % len(motion_types)]
-        img_clip = create_ken_burns_clip(img_path, clip_visual_duration, target_size=target_size, motion_type=motion_style)
+        is_video_file = img_path and (img_path.lower().endswith(".mp4") or img_path.lower().endswith(".mov")) and os.path.exists(img_path)
+        
+        if is_video_file:
+            raw_vid = VideoFileClip(img_path).without_audio()
+            if raw_vid.duration < clip_visual_duration:
+                import math
+                n_loops = int(math.ceil(clip_visual_duration / max(0.1, raw_vid.duration)))
+                raw_vid = concatenate_videoclips([raw_vid] * n_loops)
+            raw_vid = raw_vid.subclipped(0, clip_visual_duration)
+            
+            vw, vh = raw_vid.size
+            tr = target_size[0] / target_size[1]
+            vr = vw / vh
+            if vr > tr:
+                new_h = target_size[1]
+                new_w = int(target_size[1] * vr)
+            else:
+                new_w = target_size[0]
+                new_h = int(target_size[0] / vr)
+            resized_v = raw_vid.resized((new_w, new_h))
+            cx = (new_w - target_size[0]) // 2
+            cy = (new_h - target_size[1]) // 2
+            img_clip = resized_v.cropped(x1=cx, y1=cy, x2=cx+target_size[0], y2=cy+target_size[1])
+        else:
+            motion_style = seg.get("camera_movement") or motion_types[i % len(motion_types)]
+            img_clip = create_ken_burns_clip(img_path, clip_visual_duration, target_size=target_size, motion_type=motion_style)
         
         # Subtitles filter
         base_audio_path, _ = os.path.splitext(audio_path)
@@ -1749,16 +1974,21 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     if not video_clips:
         raise ValueError("No valid video segments to assemble")
         
-    # Apply crossfadein to video clips (visuals only)
+    # Apply transitions (e.g. cross_dissolve, fade_black)
     for idx_clip in range(1, len(video_clips)):
+        seg_prev = valid_segments[idx_clip - 1]
+        transition = seg_prev.get("transition_to_next", "cross_dissolve")
         try:
             if hasattr(video_clips[idx_clip], "with_effects"):
                 import moviepy.video.fx as vfx
-                video_clips[idx_clip] = video_clips[idx_clip].with_effects([vfx.CrossFadeIn(0.5)])
+                if transition == "fade_black":
+                    video_clips[idx_clip] = video_clips[idx_clip].with_effects([vfx.FadeIn(0.4)])
+                else:
+                    video_clips[idx_clip] = video_clips[idx_clip].with_effects([vfx.CrossFadeIn(0.5)])
             elif hasattr(video_clips[idx_clip], "crossfadein"):
                 video_clips[idx_clip] = video_clips[idx_clip].crossfadein(0.5)
         except Exception as cf_err:
-            print(f"Warning applying crossfade effect: {cf_err}")
+            print(f"Warning applying transition effect ({transition}): {cf_err}")
         
     # Concatenate visuals with padding=-0.5 for smooth cross-dissolve
     if len(video_clips) > 1:

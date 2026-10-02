@@ -412,6 +412,23 @@
             gap: 0.5rem;
         }
 
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+            border-radius: 999px;
+            transition: width 0.4s ease;
+        }
+
         .video-player-container {
             width: 100%;
             aspect-ratio: 16/9;
@@ -569,7 +586,14 @@
                             <input type="checkbox" id="mute-audio-toggle" style="width:auto; margin-bottom:0;">
                             <label for="mute-audio-toggle" style="margin-bottom:0; font-size:0.85rem; user-select:none; color:#f87171; font-weight:500;">🔇 Mute Audio (No Voiceover & No Music)</label>
                         </div>
-                        <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🎙️ TTS Voice Provider</label>
+                        <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.5rem; display:block;">&#127916; Animation Quality</label>
+                        <select id="animation-tier-select" style="font-size:0.8rem; margin-bottom:0.25rem;">
+                            <option value="static" selected>&#128247; Static (Ken Burns - Free)</option>
+                            <option value="hybrid">&#9889; Hybrid (Animate Hook + Payoff - ~$0.24)</option>
+                            <option value="full-standard">&#127909; Full Animation - MiniMax H3 (~$0.36)</option>
+                            <option value="full-premium">&#127902; Full Premium - Kling 3.0 Pro (~$0.60)</option>
+                        </select>
+                                                <label style="font-size:0.8rem; color:#94a3b8; margin-top:0.25rem;">🎙️ TTS Voice Provider</label>
                         <select id="tts-provider-select" style="font-size:0.8rem;">
                             <option value="edge-tts" selected>🆓 Edge TTS (Free, Microsoft)</option>
                             <option value="openai-tts">💎 OpenAI TTS (Premium, Natural)</option>
@@ -750,8 +774,12 @@
                 </div>
             </div>
 
-            <div class="row">
-                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+            <div class="row" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                    <input type="checkbox" id="director-score-check" style="width:20px; height:20px; accent-color: var(--primary); margin-left: 0.5rem;">
+                    <label for="director-score-check" style="margin-bottom: 0; cursor: pointer; text-transform: none; letter-spacing: 0;">🎬 AI Director Score (Camera Motions & Scene Planning)</label>
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
                     <input type="checkbox" id="watermark-check" checked style="width:20px; height:20px; accent-color: var(--primary); margin-left: 0.5rem;">
                     <label for="watermark-check" style="margin-bottom: 0; cursor: pointer; text-transform: none; letter-spacing: 0;">Add Watermark (@TheFeatureFactoryOfficial)</label>
                 </div>
@@ -1388,12 +1416,16 @@
                 const aspectRatio = document.getElementById("aspect-select").value;
                 const captionPreset = document.getElementById("preset-select").value;
                 
+                const use_director_score = document.getElementById("director-score-check") ? document.getElementById("director-score-check").checked : false;
+                
                 const response = await fetch("/api/generate-script", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ niche, product_title, brand, price, cta, image_path, isolate_background, duration, visual_style, imageModel, voice, aspectRatio, captionPreset, brand_tone, asset_type, enable_ai_video,
                         videoModel: document.getElementById("video-model-select") ? document.getElementById("video-model-select").value : "ltx-video",
-                        ttsProvider: document.getElementById("tts-provider-select") ? document.getElementById("tts-provider-select").value : "edge-tts"
+                        ttsProvider: document.getElementById("tts-provider-select") ? document.getElementById("tts-provider-select").value : "edge-tts",
+                        animationTier: document.getElementById("animation-tier-select") ? document.getElementById("animation-tier-select").value : "static",
+                        use_director_score: use_director_score
                     })
                 });
 
@@ -1579,6 +1611,26 @@
             }
         }
 
+        async function pollJobUntilDone(jobId, onProgress) {
+            while (true) {
+                await new Promise(r => setTimeout(r, 1500));
+                const res = await fetch(`/api/jobs/${jobId}/status`);
+                if (!res.ok) {
+                    throw new Error(`Failed polling job ${jobId}: ${res.statusText}`);
+                }
+                const job = await res.json();
+                if (onProgress) {
+                    onProgress(job);
+                }
+                if (job.status === "completed") {
+                    return job;
+                }
+                if (job.status === "failed") {
+                    throw new Error(job.error || "Job failed during processing");
+                }
+            }
+        }
+
         async function generateAssets() {
             const narrations = document.querySelectorAll(".seg-narration");
             const prompts = document.querySelectorAll(".seg-prompt");
@@ -1603,10 +1655,19 @@
             btn.disabled = true;
             spinner.style.display = "inline-block";
             status.style.display = "flex";
-            status.innerHTML = `<span class="spinner"></span> Generating voice narration and high-res visuals concurrently (approx. 15-20s)...`;
+            status.style.flexDirection = "column";
+            status.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                    <span id="assets-step-label"><span class="spinner" style="width:16px; height:16px; border-width:2px;"></span> Submitting asset generation job...</span>
+                    <span id="assets-pct-label" style="font-weight: 700; color: var(--accent);">5%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="assets-progress-bar" style="width: 5%;"></div>
+                </div>
+            `;
 
             try {
-                const response = await fetch("/api/generate-assets", {
+                const response = await fetch("/api/jobs/assets", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1620,11 +1681,37 @@
 
                 if (!response.ok) {
                     const err = await response.json();
-                    throw new Error(err.detail || "Asset generation failed");
+                    throw new Error(err.detail || "Asset job submission failed");
                 }
 
-                const data = await response.json();
-                currentSegments = data.segments;
+                const job = await response.json();
+                const jobId = job.job_id;
+
+                const stepDescriptions = {
+                    "queued": "Queued in background...",
+                    "initializing_assets": "Initializing asset pipeline...",
+                    "generating_voiceover": "Synthesizing neural voiceovers in parallel...",
+                    "voiceovers_completed": "Voiceovers ready. Generating visuals...",
+                    "generating_visual_1_of_3": "Generating Slide 1 visual asset (with rate-limit safety)...",
+                    "generating_visual_2_of_3": "Generating Slide 2 visual asset (with rate-limit safety)...",
+                    "generating_visual_3_of_3": "Generating Slide 3 visual asset (with rate-limit safety)...",
+                    "completed": "Assets generated successfully!"
+                };
+
+                const finalJob = await pollJobUntilDone(jobId, (curr) => {
+                    const pct = Math.round((curr.progress || 0) * 100);
+                    const stepLabel = document.getElementById("assets-step-label");
+                    const pctLabel = document.getElementById("assets-pct-label");
+                    const bar = document.getElementById("assets-progress-bar");
+                    if (bar) bar.style.width = `${Math.max(5, pct)}%`;
+                    if (pctLabel) pctLabel.innerText = `${pct}%`;
+                    if (stepLabel) {
+                        const msg = stepDescriptions[curr.step] || (curr.step ? curr.step.replace(/_/g, ' ') : "Processing assets...");
+                        stepLabel.innerHTML = `<span class="spinner" style="width:16px; height:16px; border-width:2px;"></span> ${msg}`;
+                    }
+                });
+
+                currentSegments = finalJob.result.segments;
 
                 currentSegments.forEach((seg, idx) => {
                     const prevDiv = document.getElementById(`preview-${idx}`);
@@ -1668,9 +1755,7 @@
             goToStep(3);
             
             const title = document.getElementById("render-title");
-            const statusText = document.getElementById("render-status-text");
             const statusDiv = document.getElementById("render-status");
-            const spinner = document.getElementById("render-spinner");
             const playerContainer = document.getElementById("video-preview-container");
             const player = document.getElementById("output-video-player");
             const successBanner = document.getElementById("success-banner");
@@ -1700,16 +1785,27 @@
             }
 
             title.innerText = "Compiling Ad Creative";
-            statusText.innerText = "Stitching audio, adding background music, and applying Ken Burns movement effects...";
             statusDiv.style.display = "flex";
-            spinner.style.display = "inline-block";
+            statusDiv.style.flexDirection = "column";
+            statusDiv.style.padding = "2rem 0";
+            statusDiv.innerHTML = `
+                <div style="display: flex; flex-direction: column; gap: 0.75rem; width: 100%; max-width: 480px; margin: 0 auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+                        <span id="render-step-label"><span class="spinner" style="width:16px; height:16px; border-width:2px;"></span> Submitting render job to MoviePy engine...</span>
+                        <span id="render-pct-label" style="font-weight: 700; color: var(--accent);">5%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="render-progress-bar" style="width: 5%;"></div>
+                    </div>
+                </div>
+            `;
             playerContainer.style.display = "none";
             successBanner.style.display = "none";
             actionsRow.style.display = "none";
             seoPanel.style.display = "none";
 
             try {
-                const response = await fetch("/api/render-video", {
+                const response = await fetch("/api/jobs/render", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -1728,12 +1824,35 @@
 
                 if (!response.ok) {
                     const err = await response.json();
-                    throw new Error(err.detail || "Video assembly failed");
+                    throw new Error(err.detail || "Render job submission failed");
                 }
 
-                const data = await response.json();
-                
-                player.src = `/${data.video_url}?t=${new Date().getTime()}`;
+                const job = await response.json();
+                const jobId = job.job_id;
+
+                const renderStepDescriptions = {
+                    "queued": "Queued in render pipeline...",
+                    "initializing_render": "Building MoviePy timeline & audio ducking...",
+                    "assembling_video": "Rendering Ken Burns motion, camera pans & word-level subtitles...",
+                    "rendering_thumbnail": "Generating promotional product cover thumbnail...",
+                    "completed": "Video render complete!"
+                };
+
+                const finalJob = await pollJobUntilDone(jobId, (curr) => {
+                    const pct = Math.round((curr.progress || 0) * 100);
+                    const stepLabel = document.getElementById("render-step-label");
+                    const pctLabel = document.getElementById("render-pct-label");
+                    const bar = document.getElementById("render-progress-bar");
+                    if (bar) bar.style.width = `${Math.max(5, pct)}%`;
+                    if (pctLabel) pctLabel.innerText = `${pct}%`;
+                    if (stepLabel) {
+                        const msg = renderStepDescriptions[curr.step] || (curr.step ? curr.step.replace(/_/g, ' ') : "Assembling video...");
+                        stepLabel.innerHTML = `<span class="spinner" style="width:16px; height:16px; border-width:2px;"></span> ${msg}`;
+                    }
+                });
+
+                const data = finalJob.result;
+                player.src = `${data.video_url}?t=${new Date().getTime()}`;
                 player.load();
 
                 // Populate Platform Copywriter data inputs
@@ -1744,65 +1863,67 @@
 
                 title.innerText = "Your Video is Ready!";
                 statusDiv.style.display = "none";
-const proj = data;
+                const proj = data;
                 playerContainer.style.display = "block";
                 successBanner.style.display = "flex";
                 actionsRow.style.display = "flex";
                 seoPanel.style.display = "block";
-            // Dynamically populate download assets
-            const zipBtn = document.getElementById("download-zip-bundle-btn");
-            if (zipBtn) zipBtn.href = `/api/download-campaign-bundle/${proj.projectId}`;
-            const downloadList = document.getElementById("download-assets-list");
-            if (downloadList) {
-                downloadList.innerHTML = "";
-                const addDownloadItem = (label, url) => {
-                    if (!url) return;
-                    const link = document.createElement("a");
-                    link.href = `/${url}`;
-                    link.download = url.split('/').pop();
-                    link.style = "display:flex; justify-content:space-between; align-items:center; color:var(--text-main); font-size:0.85rem; text-decoration:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; transition:0.2s;";
-                    link.innerHTML = `<span>${label}</span> <span style="color:var(--accent); font-weight:bold; font-size:0.8rem;">⬇️ Download</span>`;
-                    link.onmouseenter = () => link.style.background = "rgba(255,255,255,0.08)";
-                    link.onmouseleave = () => link.style.background = "rgba(255,255,255,0.03)";
-                    downloadList.appendChild(link);
-                };
 
-                addDownloadItem("🎥 Finished Social Reel (MP4)", proj.videoUrl || (typeof data !== 'undefined' ? data.video_url : ""));
-                if (proj.segments && proj.segments[0]) {
-                    addDownloadItem("📸 Enhanced Product Image (Slide 1)", proj.segments[0].image_path);
-                }
-                if (proj.segments && proj.segments[1]) {
-                    addDownloadItem("🏡 Lifestyle Model Scene (Slide 2)", proj.segments[1].image_path);
-                }
-                if (proj.segments && proj.segments[2]) {
-                    addDownloadItem("💳 Offer Creative (Slide 3)", proj.segments[2].image_path);
-                }
-                addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", proj.thumbnailUrl || `outputs/${proj.projectId}/thumbnail.jpg`);
-            }
-            // Dynamically populate A/B testing hooks
-            const hooksList = document.getElementById("ab-hooks-list");
-            if (hooksList) {
-                hooksList.innerHTML = "";
-                const altHooks = proj.alternativeHooks || [];
-                if (altHooks.length === 0) {
-                    hooksList.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; font-style:italic;">No alternate hooks generated.</div>`;
-                } else {
-                    altHooks.forEach((h, idx) => {
-                        const hCard = document.createElement("div");
-                        hCard.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.8rem;";
-                        hCard.innerHTML = `<span><strong>Hook ${idx+1}:</strong> "${h}"</span> <button onclick="navigator.clipboard.writeText('${h.replace(/'/g, "\'")}')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-weight:bold; font-size:0.75rem; padding:0; margin-left:0.5rem; text-transform:uppercase;">Copy</button>`;
-                        hooksList.appendChild(hCard);
-                    });
-                }
-            }
+                // Dynamically populate download assets
+                const zipBtn = document.getElementById("download-zip-bundle-btn");
+                if (zipBtn) zipBtn.href = `/api/download-campaign-bundle/${proj.project_id || proj.projectId || currentProjectId}`;
+                const downloadList = document.getElementById("download-assets-list");
+                if (downloadList) {
+                    downloadList.innerHTML = "";
+                    const addDownloadItem = (label, url) => {
+                        if (!url) return;
+                        const link = document.createElement("a");
+                        link.href = url.startsWith('/') ? url : `/${url}`;
+                        link.download = url.split('/').pop();
+                        link.style = "display:flex; justify-content:space-between; align-items:center; color:var(--text-main); font-size:0.85rem; text-decoration:none; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:8px; transition:0.2s;";
+                        link.innerHTML = `<span>${label}</span> <span style="color:var(--accent); font-weight:bold; font-size:0.8rem;">⬇️ Download</span>`;
+                        link.onmouseenter = () => link.style.background = "rgba(255,255,255,0.08)";
+                        link.onmouseleave = () => link.style.background = "rgba(255,255,255,0.03)";
+                        downloadList.appendChild(link);
+                    };
 
+                    addDownloadItem("🎥 Finished Social Reel (MP4)", data.video_url);
+                    if (currentSegments && currentSegments[0]) {
+                        addDownloadItem("📸 Enhanced Product Image (Slide 1)", currentSegments[0].image_path);
+                    }
+                    if (currentSegments && currentSegments[1]) {
+                        addDownloadItem("🏡 Lifestyle Model Scene (Slide 2)", currentSegments[1].image_path);
+                    }
+                    if (currentSegments && currentSegments[2]) {
+                        addDownloadItem("💳 Offer Creative (Slide 3)", currentSegments[2].image_path);
+                    }
+                    addDownloadItem("🖼️ Ad Video Thumbnail (JPEG)", data.thumbnail_url || `outputs/${currentProjectId}/thumbnail.jpg`);
+                }
 
-                downloadBtn.href = `/${data.video_url}`;
+                // Dynamically populate A/B testing hooks
+                const hooksList = document.getElementById("ab-hooks-list");
+                if (hooksList) {
+                    hooksList.innerHTML = "";
+                    const altHooks = alternativeHooksList || [];
+                    if (altHooks.length === 0) {
+                        hooksList.innerHTML = `<div style="color:var(--text-muted); font-size:0.8rem; font-style:italic;">No alternate hooks generated.</div>`;
+                    } else {
+                        altHooks.forEach((h, idx) => {
+                            const hCard = document.createElement("div");
+                            hCard.style = "display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem 0.75rem; font-size:0.8rem;";
+                            hCard.innerHTML = `<span><strong>Hook ${idx+1}:</strong> "${h}"</span> <button onclick="navigator.clipboard.writeText('${h.replace(/'/g, "\'")}')" style="background:transparent; border:none; color:var(--primary); cursor:pointer; font-weight:bold; font-size:0.75rem; padding:0; margin-left:0.5rem; text-transform:uppercase;">Copy</button>`;
+                            hooksList.appendChild(hCard);
+                        });
+                    }
+                }
+
+                downloadBtn.href = data.video_url.startsWith('/') ? data.video_url : `/${data.video_url}`;
                 
                 // Display Thumbnail if generated
                 if (data.thumbnail_url) {
-                    document.getElementById("output-thumbnail-img").src = `/${data.thumbnail_url}?t=${new Date().getTime()}`;
-                    document.getElementById("download-thumb-btn").href = `/${data.thumbnail_url}`;
+                    const thumbImg = document.getElementById("output-thumbnail-img");
+                    thumbImg.src = `${data.thumbnail_url}?t=${new Date().getTime()}`;
+                    document.getElementById("download-thumb-btn").href = data.thumbnail_url;
                     document.getElementById("thumbnail-preview-container").style.display = "block";
                 } else {
                     document.getElementById("thumbnail-preview-container").style.display = "none";
@@ -1812,12 +1933,10 @@ const proj = data;
                 loadProjects(); // Refresh history list
             } catch (err) {
                 title.innerText = "Assembly Failed";
-                statusText.innerText = `Error: ${err.message}`;
-                spinner.style.display = "none";
-                actionsRow.style.display = "flex";
+                statusDiv.innerHTML = `<span style="color:#ef4444; font-weight:600;">Error: ${err.message}</span>`;
             } finally {
-                document.getElementById("generate-assets-btn").disabled = false;
-                document.getElementById("assets-btn-spinner").style.display = "none";
+                const compileBtn = document.getElementById("render-video-btn");
+                if (compileBtn) compileBtn.disabled = false;
             }
         }
 
