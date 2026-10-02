@@ -140,7 +140,8 @@ async def download_stock_asset(url: str, output_path: str) -> str:
     """Download a stock video or image to local path."""
     try:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
             response = await client.get(url)
             if response.status_code != 200:
                 raise RuntimeError(f"Download failed: {response.status_code}")

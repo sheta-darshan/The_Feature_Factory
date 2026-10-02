@@ -1685,7 +1685,11 @@
                         segments: currentSegments,
                         aspectRatio: aspectRatio,
                         imageModel: imageModel,
-                        voice: document.getElementById("voice-select").value
+                        voice: document.getElementById("voice-select").value,
+                        ttsProvider: document.getElementById("tts-provider-select") ? document.getElementById("tts-provider-select").value : "edge-tts",
+                        animationTier: document.getElementById("animation-tier-select") ? document.getElementById("animation-tier-select").value : "static",
+                        videoModel: document.getElementById("video-model-select") ? document.getElementById("video-model-select").value : "ltx-video",
+                        enableAiVideo: document.getElementById("enable-ai-video") ? document.getElementById("enable-ai-video").checked : false
                     })
                 });
 

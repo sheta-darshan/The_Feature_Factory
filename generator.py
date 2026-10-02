@@ -828,6 +828,51 @@ def enrich_cinematic_prompt(raw_prompt: str, niche: str = "General Retail", visu
 
 
 
+def synthesize_word_timings(text: str, audio_path: str) -> str:
+    """
+    Interpolates word timings across audio duration for TTS engines that do not
+    provide word-level timestamps (e.g. ElevenLabs, OpenAI TTS).
+    Ensures draw_text_on_frame always has timings to display animated subtitles.
+    """
+    json_path = os.path.splitext(audio_path)[0] + ".json"
+    cleaned_words = [w.strip() for w in text.replace("**", "").replace("*", "").replace("_", "").split() if w.strip()]
+    if not cleaned_words:
+        return json_path
+        
+    total_duration = 0.0
+    try:
+        clip = AudioFileClip(audio_path)
+        total_duration = max(0.5, float(clip.duration))
+        try:
+            clip.close()
+        except Exception:
+            pass
+    except Exception:
+        total_duration = max(1.0, len(cleaned_words) / 2.3)
+        
+    start_pad = 0.05
+    effective_duration = max(0.3, total_duration - 0.1)
+    word_dur = effective_duration / len(cleaned_words)
+    
+    words_data = []
+    for idx, w in enumerate(cleaned_words):
+        w_start = start_pad + (idx * word_dur)
+        w_end = min(total_duration, w_start + word_dur)
+        words_data.append({
+            "word": w,
+            "start": round(w_start, 3),
+            "end": round(w_end, 3)
+        })
+        
+    try:
+        with open(json_path, "w", encoding="utf-8") as fj:
+            json.dump(words_data, fj, indent=2)
+    except Exception as je:
+        print(f"Warning: Failed saving synthesized word timings: {je}")
+        
+    return json_path
+
+
 async def generate_voiceover_elevenlabs(text: str, output_path: str, voice: str = "Rachel") -> str:
     """
     Generate voiceover using ElevenLabs API for premium emotional narration.
@@ -873,7 +918,8 @@ async def generate_voiceover_elevenlabs(text: str, output_path: str, voice: str 
             if response.status_code == 200:
                 with open(output_path, "wb") as f:
                     f.write(response.content)
-                print(f"ElevenLabs voiceover generated: {output_path}")
+                synthesize_word_timings(text, output_path)
+                print(f"ElevenLabs voiceover generated with subtitles: {output_path}")
                 return output_path
             else:
                 print(f"ElevenLabs API error ({response.status_code}): {response.text[:200]}")
@@ -918,9 +964,10 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
     # Sanitize prompt to ensure zero text directives
     cleaned_prompt = enrich_cinematic_prompt(prompt, niche=niche, visual_style=visual_style)
     
-    token = os.getenv("REPLICATE_API_TOKEN")
-    if not token or "your_" in token.lower() or not raw_image_path or not os.path.exists(raw_image_path):
-        print("Replicate token or product image missing. Falling back to standard generation...")
+    if not raw_image_path or not os.path.exists(raw_image_path):
+        print("Product image missing. Falling back to standard generation...")
+        if image_model == "imagen-3":
+            return generate_image_google(cleaned_prompt, output_path, aspect_ratio, niche=niche, visual_style=visual_style)
         return generate_image_replicate(cleaned_prompt, output_path, aspect_ratio, image_model)
         
     try:
@@ -929,6 +976,46 @@ def generate_product_image_replicate(prompt: str, raw_image_path: str, output_pa
         input_img = Image.open(raw_image_path).convert("RGBA")
         transparent_img = remove(input_img)
         
+        # If user selected native Google Imagen 3, generate background with Imagen 3 and composite product
+        if image_model == "imagen-3":
+            print(f"Generating scene background with native Google Imagen 3: {cleaned_prompt[:60]}...")
+            bg_path = generate_image_google(cleaned_prompt, output_path, aspect_ratio=aspect_ratio, niche=niche, visual_style=visual_style)
+            with Image.open(bg_path) as filled_img:
+                filled_rgba = filled_img.convert("RGBA")
+                target_w, target_h = filled_rgba.size
+                prod_w, prod_h = transparent_img.size
+                if (prod_w, prod_h) != (target_w, target_h):
+                    scale = min((target_w * 0.72) / prod_w, (target_h * 0.72) / prod_h)
+                    new_w, new_h = max(1, int(prod_w * scale)), max(1, int(prod_h * scale))
+                    resized_prod = transparent_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    pos_x = (target_w - new_w) // 2
+                    pos_y = int(target_h * 0.52) - (new_h // 2)
+                    filled_rgba.paste(resized_prod, (pos_x, pos_y), resized_prod)
+                else:
+                    filled_rgba.paste(transparent_img, (0, 0), transparent_img)
+                jpg_path = os.path.splitext(output_path)[0] + ".jpg"
+                filled_rgba.convert("RGB").save(jpg_path, "JPEG", quality=95)
+                print(f"Successfully rendered composite image with Google Imagen 3: {jpg_path}")
+                return jpg_path
+
+        token = os.getenv("REPLICATE_API_TOKEN")
+        if not token or "your_" in token.lower():
+            print("Replicate token missing for inpainting. Generating background with Imagen 3 / fallback...")
+            bg_path = generate_image_google(cleaned_prompt, output_path, aspect_ratio=aspect_ratio, niche=niche, visual_style=visual_style)
+            with Image.open(bg_path) as filled_img:
+                filled_rgba = filled_img.convert("RGBA")
+                target_w, target_h = filled_rgba.size
+                prod_w, prod_h = transparent_img.size
+                scale = min((target_w * 0.72) / prod_w, (target_h * 0.72) / prod_h)
+                new_w, new_h = max(1, int(prod_w * scale)), max(1, int(prod_h * scale))
+                resized_prod = transparent_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                pos_x = (target_w - new_w) // 2
+                pos_y = int(target_h * 0.52) - (new_h // 2)
+                filled_rgba.paste(resized_prod, (pos_x, pos_y), resized_prod)
+                jpg_path = os.path.splitext(output_path)[0] + ".jpg"
+                filled_rgba.convert("RGB").save(jpg_path, "JPEG", quality=95)
+                return jpg_path
+
         # 2. Generate Inpainting Mask (0 = preserve product, 255 = inpaint background)
         alpha = transparent_img.split()[3]
         # Binarize alpha: where alpha > 20 is product (0/black), where alpha <= 20 is background to inpaint (255/white)
@@ -2003,6 +2090,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         json_path = base_audio_path + ".json"
         word_timings = None
         try:
+            if not os.path.exists(json_path) and os.path.exists(audio_path):
+                script_text = seg.get("script") or seg.get("text_to_speak") or ""
+                if script_text:
+                    synthesize_word_timings(script_text, audio_path)
             if os.path.exists(json_path):
                 with open(json_path, "r", encoding="utf-8") as fj:
                     word_timings = json.load(fj)
@@ -2083,6 +2174,11 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
     final_duration = final_clip.duration
     
     # Background Music Integration & Dynamic Ducking
+    if bg_music_path and not os.path.exists(bg_music_path):
+        candidate_bg = os.path.join(PROJECT_ROOT, bg_music_path)
+        if os.path.exists(candidate_bg):
+            bg_music_path = candidate_bg
+
     if bg_music_path and os.path.exists(bg_music_path) and not no_sound:
         try:
             bg_clip = AudioFileClip(bg_music_path)
@@ -2099,7 +2195,8 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
             print(f"Warning: Failed to mix background music: {e}")
             
     # CTA Notification Chime
-    chime_sfx_path = "static/music/chime_notification.wav"
+    chime_sfx_cand = os.path.join(PROJECT_ROOT, "static", "music", "chime_notification.wav")
+    chime_sfx_path = chime_sfx_cand if os.path.exists(chime_sfx_cand) else "static/music/chime_notification.wav"
     if os.path.exists(chime_sfx_path) and len(clip_start_times) > 0 and not no_sound:
         try:
             chime_sfx = AudioFileClip(chime_sfx_path)
@@ -2117,6 +2214,10 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
         for seg in segments:
             v_prompt = seg.get("visual_prompt", "")
             cand_path = get_ambient_sfx_path(v_prompt)
+            if cand_path and not os.path.exists(cand_path):
+                cand_root = os.path.join(PROJECT_ROOT, cand_path)
+                if os.path.exists(cand_root):
+                    cand_path = cand_root
             if cand_path and os.path.exists(cand_path):
                 matched_sfx_path = cand_path
                 break
@@ -2135,7 +2236,9 @@ def assemble_video(segments: list, output_path: str, aspect_ratio: str = "16:9",
 
     # Transition Whoosh SFX at slide cuts
     if not no_sound and final_clip.audio and len(clip_start_times) > 1:
-        trans_sfx_path = "static/sfx/whoosh.wav" if os.path.exists("static/sfx/whoosh.wav") else "static/music/whoosh_transition.wav"
+        whoosh_1 = os.path.join(PROJECT_ROOT, "static", "sfx", "whoosh.wav")
+        whoosh_2 = os.path.join(PROJECT_ROOT, "static", "music", "whoosh_transition.wav")
+        trans_sfx_path = whoosh_1 if os.path.exists(whoosh_1) else (whoosh_2 if os.path.exists(whoosh_2) else "static/sfx/whoosh.wav")
         if os.path.exists(trans_sfx_path):
             try:
                 whoosh_clips = []

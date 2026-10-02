@@ -178,7 +178,7 @@ async def execute_asset_generation(
     _report("initializing_assets", 0.05, "Initializing asset generation pipeline")
 
     # Read existing metadata safely under lock
-    meta = metadata_manager.read_metadata(project_id)
+    meta = metadata_manager.read_metadata(project_id) or {}
 
     # Update metadata safely
     metadata_manager.update_metadata(project_id, {
@@ -409,7 +409,7 @@ async def execute_video_render(
 
     _report("initializing_render", 0.05, "Building MoviePy timeline and audio configuration")
 
-    meta = metadata_manager.read_metadata(project_id)
+    meta = metadata_manager.read_metadata(project_id) or {}
     visual_style = meta.get("visualStyle", "Clean Commercial Photography")
 
     # Format segments into list of dicts
@@ -429,11 +429,19 @@ async def execute_video_render(
     if req.musicTrack and not req.noSound:
         if req.musicTrack in ["Auto-Select", "auto", "Auto"]:
             style_music_mapping = {
+                # Commercial e-commerce styles
+                "Clean Commercial Photography": "ambient_dream.mp3",
+                "Luxury Studio Showcase": "ambient_space.mp3",
+                "High-End Fashion Editorial": "synthwave_beat.mp3",
+                "Minimalist Scandinavian Lifestyle": "ambient_dream.mp3",
+                "Gourmet Food Editorial": "ambient_dream.mp3",
+                "Bright Cinematic Lifestyle": "ambient_dream.mp3",
+                # Creative & thematic styles
+                "Cinematic Photo": "ambient_dream.mp3",
                 "Cyberpunk": "synthwave_beat.mp3",
                 "Retro Anime": "ambient_dream.mp3",
                 "Dark Sci-Fi / Fantasy": "ambient_space.mp3",
                 "Steampunk Oil Painting": "ambient_dream.mp3",
-                "Cinematic Photo": "ambient_dream.mp3",
                 "Storybook Sketch Art": "ambient_dream.mp3",
                 "Cosmic Synthwave / Hologram": "synthwave_beat.mp3",
                 "Traditional Ink Wash (Sumi-e)": "ambient_dream.mp3",

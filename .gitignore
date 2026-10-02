@@ -13,5 +13,8 @@ final_pitch_submission.mp4
 .pitch_audio.m4a
 .voiceover.mp3
 content_calendar_365.md
-merge_pitch_video.py
 client_secrets.json
+client_token.json
+uploads/
+scratch/
+jobs/

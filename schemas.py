@@ -84,10 +84,10 @@ class AssetRequest(BaseModel):
     aspectRatio: str = "9:16"
     imageModel: str = "flux-schnell"
     voice: str = "en-US-GuyNeural"
-    ttsProvider: str = "edge-tts"
-    animationTier: Optional[str] = "static"
+    ttsProvider: Optional[str] = None
+    animationTier: Optional[str] = None
     videoModel: Optional[str] = None
-    enableAiVideo: Optional[bool] = False
+    enableAiVideo: Optional[bool] = None
 
 
 class RenderRequest(BaseModel):

@@ -4,6 +4,7 @@ Inspired by OpenReels' support for 6+ TTS providers.
 Supports: Edge TTS (free), OpenAI TTS (premium), ElevenLabs (ultra-premium).
 """
 import os
+import json
 import asyncio
 import httpx
 import edge_tts
@@ -12,21 +13,55 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def synthesize_word_timings(text: str, audio_path: str) -> str:
+    """
+    Interpolates word timings across audio duration for TTS engines that do not
+    provide word-level timestamps (e.g. ElevenLabs, OpenAI TTS).
+    """
+    json_path = os.path.splitext(audio_path)[0] + ".json"
+    cleaned_words = [w.strip() for w in text.replace("**", "").replace("*", "").replace("_", "").split() if w.strip()]
+    if not cleaned_words:
+        return json_path
+        
+    total_duration = 0.0
+    try:
+        from moviepy import AudioFileClip
+        clip = AudioFileClip(audio_path)
+        total_duration = max(0.5, float(clip.duration))
+        try:
+            clip.close()
+        except Exception:
+            pass
+    except Exception:
+        total_duration = max(1.0, len(cleaned_words) / 2.3)
+        
+    start_pad = 0.05
+    effective_duration = max(0.3, total_duration - 0.1)
+    word_dur = effective_duration / len(cleaned_words)
+    
+    words_data = []
+    for idx, w in enumerate(cleaned_words):
+        w_start = start_pad + (idx * word_dur)
+        w_end = min(total_duration, w_start + word_dur)
+        words_data.append({
+            "word": w,
+            "start": round(w_start, 3),
+            "end": round(w_end, 3)
+        })
+        
+    try:
+        with open(json_path, "w", encoding="utf-8") as fj:
+            json.dump(words_data, fj, indent=2)
+    except Exception as je:
+        print(f"Warning: Failed saving synthesized word timings: {je}")
+        
+    return json_path
+
+
 async def generate_voiceover_multi(text: str, output_path: str, voice: str = "en-US-GuyNeural",
                                     provider: str = "edge-tts", rate: str = "+0%", pitch: str = "+0Hz") -> str:
     """
     Unified TTS interface that routes to the correct provider.
-    
-    Args:
-        text: Text to speak
-        output_path: Where to save the audio file
-        voice: Voice ID (provider-specific)
-        provider: One of 'edge-tts', 'openai-tts', 'elevenlabs'
-        rate: Speech rate (Edge TTS only)
-        pitch: Pitch adjustment (Edge TTS only)
-    
-    Returns:
-        Path to the generated audio file
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     
@@ -40,11 +75,27 @@ async def generate_voiceover_multi(text: str, output_path: str, voice: str = "en
 
 
 async def _generate_edge_tts(text: str, output_path: str, voice: str, rate: str, pitch: str) -> str:
-    """Generate voiceover using Microsoft Edge TTS (free)."""
+    """Generate voiceover using Microsoft Edge TTS (free) with word timestamps."""
     try:
-        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
-        await communicate.save(output_path)
-        print(f"[Edge TTS] Generated voiceover: {output_path}")
+        cleaned_text = text.replace("**", "").replace("*", "").replace("_", "").strip()
+        communicate = edge_tts.Communicate(cleaned_text, voice, rate=rate, pitch=pitch, boundary="WordBoundary")
+        words = []
+        with open(output_path, "wb") as f:
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    f.write(chunk["data"])
+                elif chunk["type"] == "WordBoundary":
+                    start = chunk["offset"] / 10000000.0
+                    duration = chunk["duration"] / 10000000.0
+                    words.append({
+                        "word": chunk["text"],
+                        "start": start,
+                        "end": start + duration
+                    })
+        json_path = output_path.replace(".mp3", ".json")
+        with open(json_path, "w", encoding="utf-8") as fj:
+            json.dump(words, fj, indent=2)
+        print(f"[Edge TTS] Generated voiceover with subtitles: {output_path}")
         return output_path
     except Exception as e:
         print(f"[Edge TTS] Error: {e}")
@@ -81,7 +132,8 @@ async def _generate_openai_tts(text: str, output_path: str, voice: str = "nova")
             with open(output_path, "wb") as f:
                 f.write(response.content)
             
-            print(f"[OpenAI TTS] Generated voiceover ({voice}): {output_path}")
+            synthesize_word_timings(text, output_path)
+            print(f"[OpenAI TTS] Generated voiceover with subtitles ({voice}): {output_path}")
             return output_path
     except Exception as e:
         print(f"[OpenAI TTS] Error: {e}. Falling back to Edge TTS.")
@@ -132,7 +184,8 @@ async def _generate_elevenlabs_tts(text: str, output_path: str, voice: str = "Ra
             with open(output_path, "wb") as f:
                 f.write(response.content)
             
-            print(f"[ElevenLabs] Generated voiceover ({voice}): {output_path}")
+            synthesize_word_timings(text, output_path)
+            print(f"[ElevenLabs] Generated voiceover with subtitles ({voice}): {output_path}")
             return output_path
     except Exception as e:
         print(f"[ElevenLabs] Error: {e}. Falling back to Edge TTS.")

@@ -363,7 +363,7 @@ async def api_generate_script(req: ScriptRequest):
             "generation_logs": [
                 {
                     "step_name": "script_generation",
-                    "model": "gemini-2.5-flash",
+                    "model": getattr(req, "scriptModel", None) or "gemini-2.5-pro",
                     "provider": "google",
                     "prompt": f"{req.niche}: {req.product_title} (Brand: {req.brand})",
                     "cost_estimate": 0.0005,
